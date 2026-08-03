@@ -1,0 +1,456 @@
+{
+  "inventario": [
+    {
+      "id": 2001,
+      "marca": "Ray-Ban",
+      "modelo": "Aviator",
+      "tipo": "Armazón",
+      "cantidad": 12,
+      "precio": 145,
+      "imagen": "https://i.imgur.com/4V7zX7K.jpg"
+    },
+    {
+      "id": 2002,
+      "marca": "Oakley",
+      "modelo": "Holbrook",
+      "tipo": "Armazón",
+      "cantidad": 8,
+      "precio": 130,
+      "imagen": "https://i.imgur.com/G6QxZdf.jpg"
+    },
+    {
+      "id": 2003,
+      "marca": "Hoya",
+      "modelo": "Vision",
+      "tipo": "Lente",
+      "cantidad": 50,
+      "precio": 65.5,
+      "imagen": "https://i.imgur.com/2QM3u1G.jpg"
+    },
+    {
+      "id": 2004,
+      "marca": "ZEISS",
+      "modelo": "BlueGuard",
+      "tipo": "Tratamiento",
+      "cantidad": 75,
+      "precio": 35,
+      "imagen": "https://i.imgur.com/0QfB0wM.jpg"
+    },
+    {
+      "id": 2005,
+      "marca": "Bose",
+      "modelo": "Frames",
+      "tipo": "Accesorio",
+      "cantidad": 20,
+      "precio": 199,
+      "imagen": "https://i.imgur.com/kNys7vS.jpg"
+    }
+  ],
+  "pacientes": [
+    {
+      "id": 1,
+      "nombre": "Ana Pérez",
+      "telefono": "5551234567",
+      "correo": "ana.perez@example.com",
+      "fechaNacimiento": "1987-04-15",
+      "peso": "65kg",
+      "estatura": "1.65m",
+      "historialClinico": "Hipertensión leve, sin alergias conocidas.",
+      "direccion": "Calle 5 de Mayo 123"
+    },
+    {
+      "id": 2,
+      "nombre": "Carlos Gómez",
+      "telefono": "5559876543",
+      "correo": "carlos.gomez@example.com",
+      "fechaNacimiento": "1992-09-22",
+      "peso": "78kg",
+      "estatura": "1.72m",
+      "historialClinico": "Uso lentes desde los 12 años; antecedentes familiares de miopía.",
+      "direccion": "Avenida Juárez 456"
+    },
+    {
+      "id": 3,
+      "nombre": "María López",
+      "telefono": "5551122334",
+      "correo": "maria.lopez@example.com",
+      "fechaNacimiento": "2001-12-03",
+      "peso": "58kg",
+      "estatura": "1.60m",
+      "historialClinico": "No usa lentes; consulta anual por molestias visuales.",
+      "direccion": "Privada de las Rosas 12"
+    },
+    {
+      "id": 4,
+      "nombre": "José Ramírez",
+      "telefono": "5556677889",
+      "correo": "jose.ramirez@example.com",
+      "fechaNacimiento": "1975-06-08",
+      "peso": "82kg",
+      "estatura": "1.78m",
+      "historialClinico": "Diabético tipo 2, requiere revisión de fondo de ojo.",
+      "direccion": "Boulevard Central 89"
+    },
+    {
+      "id": 5,
+      "nombre": "Lucía Torres",
+      "telefono": "5554433221",
+      "correo": "lucia.torres@example.com",
+      "fechaNacimiento": "1998-03-30",
+      "peso": "60kg",
+      "estatura": "1.62m",
+      "historialClinico": "Alergia a polvo; requiere lentes con tratamiento antirreflejante.",
+      "direccion": "Camino Real 210"
+    }
+  ],
+  "examenes": [
+    {
+      "id": 3001,
+      "pacienteId": 1,
+      "od": {
+        "esferico": "-1.50",
+        "cilindrico": "-0.25",
+        "eje": "90"
+      },
+      "oi": {
+        "esferico": "-1.25",
+        "cilindrico": "-0.50",
+        "eje": "85"
+      },
+      "tipoArmazon": "Ray-Ban Aviator",
+      "tratamientoLentes": "Antirreflejante, Luz Azul",
+      "fecha": "2026-06-01 10:00:00"
+    },
+    {
+      "id": 3002,
+      "pacienteId": 2,
+      "od": {
+        "esferico": "-2.00",
+        "cilindrico": "0.00",
+        "eje": "0"
+      },
+      "oi": {
+        "esferico": "-1.75",
+        "cilindrico": "0.00",
+        "eje": "0"
+      },
+      "tipoArmazon": "Oakley Holbrook",
+      "tratamientoLentes": "Polarizado",
+      "fecha": "2026-06-05 11:30:00"
+    },
+    {
+      "id": 3003,
+      "pacienteId": 3,
+      "od": {
+        "esferico": "+0.50",
+        "cilindrico": "-0.75",
+        "eje": "120"
+      },
+      "oi": {
+        "esferico": "+0.75",
+        "cilindrico": "-0.50",
+        "eje": "115"
+      },
+      "tipoArmazon": "Ray-Ban Aviator",
+      "tratamientoLentes": "Antirayaduras",
+      "fecha": "2026-06-10 09:45:00"
+    },
+    {
+      "id": 3004,
+      "pacienteId": 4,
+      "od": {
+        "esferico": "-3.00",
+        "cilindrico": "-1.00",
+        "eje": "80"
+      },
+      "oi": {
+        "esferico": "-2.75",
+        "cilindrico": "-1.25",
+        "eje": "75"
+      },
+      "tipoArmazon": "Bose Frames",
+      "tratamientoLentes": "Transición",
+      "fecha": "2026-06-12 14:20:00"
+    },
+    {
+      "id": 3005,
+      "pacienteId": 5,
+      "od": {
+        "esferico": "-0.25",
+        "cilindrico": "-0.50",
+        "eje": "105"
+      },
+      "oi": {
+        "esferico": "-0.50",
+        "cilindrico": "-0.25",
+        "eje": "100"
+      },
+      "tipoArmazon": "Oakley Holbrook",
+      "tratamientoLentes": "Luz Azul",
+      "fecha": "2026-06-15 16:10:00"
+    }
+  ],
+  "pedidos": [
+    {
+      "id": 4001,
+      "examenId": 3001,
+      "pacienteId": 1,
+      "productos": [
+        {
+          "id": 2001,
+          "marca": "Ray-Ban",
+          "modelo": "Aviator",
+          "tipo": "Armazón",
+          "precio": 145,
+          "cantidad": 1
+        }
+      ],
+      "total": 145,
+      "estado": "Pendiente",
+      "fecha": "2026-06-01 10:30:00"
+    },
+    {
+      "id": 4002,
+      "examenId": 3002,
+      "pacienteId": 2,
+      "productos": [
+        {
+          "id": 2002,
+          "marca": "Oakley",
+          "modelo": "Holbrook",
+          "tipo": "Armazón",
+          "precio": 130,
+          "cantidad": 1
+        }
+      ],
+      "total": 130,
+      "estado": "Pendiente",
+      "fecha": "2026-06-05 12:00:00"
+    },
+    {
+      "id": 4003,
+      "examenId": 3003,
+      "pacienteId": 3,
+      "productos": [
+        {
+          "id": 2003,
+          "marca": "Hoya",
+          "modelo": "Vision",
+          "tipo": "Lente",
+          "precio": 65.5,
+          "cantidad": 2
+        }
+      ],
+      "total": 131,
+      "estado": "Pendiente",
+      "fecha": "2026-06-10 10:15:00"
+    },
+    {
+      "id": 4004,
+      "examenId": 3004,
+      "pacienteId": 4,
+      "productos": [
+        {
+          "id": 2005,
+          "marca": "Bose",
+          "modelo": "Frames",
+          "tipo": "Accesorio",
+          "precio": 199,
+          "cantidad": 1
+        }
+      ],
+      "total": 199,
+      "estado": "Pendiente",
+      "fecha": "2026-06-12 14:50:00"
+    },
+    {
+      "id": 4005,
+      "examenId": 3005,
+      "pacienteId": 5,
+      "productos": [
+        {
+          "id": 2002,
+          "marca": "Oakley",
+          "modelo": "Holbrook",
+          "tipo": "Armazón",
+          "precio": 130,
+          "cantidad": 1
+        },
+        {
+          "id": 2004,
+          "marca": "ZEISS",
+          "modelo": "BlueGuard",
+          "tipo": "Tratamiento",
+          "precio": 35,
+          "cantidad": 1
+        }
+      ],
+      "total": 165,
+      "estado": "Pendiente",
+      "fecha": "2026-06-15 16:45:00"
+    }
+  ],
+  "ventas": [
+    {
+      "id": 5001,
+      "pacienteId": 1,
+      "productos": [
+        {
+          "id": 2001,
+          "marca": "Ray-Ban",
+          "modelo": "Aviator",
+          "tipo": "Armazón",
+          "precio": 145,
+          "cantidadVenta": 1
+        }
+      ],
+      "detallesLentes": {
+        "tratamiento": 0,
+        "materiales": 0,
+        "armazonExtra": 0
+      },
+      "subtotalCarrito": 145,
+      "total": 145,
+      "adelanto": 145,
+      "saldoPendiente": 0,
+      "estadoPago": "Pagado",
+      "lentesTerminados": 1,
+      "motivoNoTerminado": null,
+      "examenId": 3001,
+      "consulta": "Venta de armazón con tratamiento antirreflejante y revisión completa.",
+      "fecha": "2026-06-01 11:00:00"
+    },
+    {
+      "id": 5002,
+      "pacienteId": 2,
+      "productos": [
+        {
+          "id": 2002,
+          "marca": "Oakley",
+          "modelo": "Holbrook",
+          "tipo": "Armazón",
+          "precio": 130,
+          "cantidadVenta": 1
+        },
+        {
+          "id": 1004,
+          "marca": "Polarizado",
+          "modelo": "",
+          "tipo": "Tratamiento",
+          "precio": 0,
+          "cantidadVenta": 1
+        }
+      ],
+      "detallesLentes": {
+        "tratamiento": 0,
+        "materiales": 0,
+        "armazonExtra": 0
+      },
+      "subtotalCarrito": 130,
+      "total": 130,
+      "adelanto": 50,
+      "saldoPendiente": 80,
+      "estadoPago": "Pendiente",
+      "lentesTerminados": 1,
+      "motivoNoTerminado": null,
+      "examenId": 3002,
+      "consulta": "Armazón con tratamiento polarizado. Pago a plazos.",
+      "fecha": "2026-06-05 12:30:00"
+    },
+    {
+      "id": 5003,
+      "pacienteId": 3,
+      "productos": [
+        {
+          "id": 2003,
+          "marca": "Hoya",
+          "modelo": "Vision",
+          "tipo": "Lente",
+          "precio": 65.5,
+          "cantidadVenta": 2
+        }
+      ],
+      "detallesLentes": {
+        "tratamiento": 35,
+        "materiales": 0,
+        "armazonExtra": 0
+      },
+      "subtotalCarrito": 131,
+      "total": 166,
+      "adelanto": 100,
+      "saldoPendiente": 66,
+      "estadoPago": "Pendiente",
+      "lentesTerminados": 0,
+      "motivoNoTerminado": "Falta aplicar el tratamiento antirayaduras.",
+      "examenId": 3003,
+      "consulta": "Lentes con graduación ligera y solicitud de tratamiento antirayaduras.",
+      "fecha": "2026-06-10 11:30:00"
+    },
+    {
+      "id": 5004,
+      "pacienteId": 4,
+      "productos": [
+        {
+          "id": 2005,
+          "marca": "Bose",
+          "modelo": "Frames",
+          "tipo": "Accesorio",
+          "precio": 199,
+          "cantidadVenta": 1
+        }
+      ],
+      "detallesLentes": {
+        "tratamiento": 0,
+        "materiales": 0,
+        "armazonExtra": 0
+      },
+      "subtotalCarrito": 199,
+      "total": 199,
+      "adelanto": 199,
+      "saldoPendiente": 0,
+      "estadoPago": "Pagado",
+      "lentesTerminados": 1,
+      "motivoNoTerminado": null,
+      "examenId": 3004,
+      "consulta": "Compra de accesorio Bose Frames para lentes inteligentes.",
+      "fecha": "2026-06-12 15:10:00"
+    },
+    {
+      "id": 5005,
+      "pacienteId": 5,
+      "productos": [
+        {
+          "id": 2002,
+          "marca": "Oakley",
+          "modelo": "Holbrook",
+          "tipo": "Armazón",
+          "precio": 130,
+          "cantidadVenta": 1
+        },
+        {
+          "id": 2004,
+          "marca": "ZEISS",
+          "modelo": "BlueGuard",
+          "tipo": "Tratamiento",
+          "precio": 35,
+          "cantidadVenta": 1
+        }
+      ],
+      "detallesLentes": {
+        "tratamiento": 35,
+        "materiales": 0,
+        "armazonExtra": 0
+      },
+      "subtotalCarrito": 165,
+      "total": 165,
+      "adelanto": 165,
+      "saldoPendiente": 0,
+      "estadoPago": "Pagado",
+      "lentesTerminados": 1,
+      "motivoNoTerminado": null,
+      "examenId": 3005,
+      "consulta": "Venta de armazón con tratamiento de luz azul para cliente con alergia ocular.",
+      "fecha": "2026-06-15 17:00:00"
+    }
+  ]
+}
