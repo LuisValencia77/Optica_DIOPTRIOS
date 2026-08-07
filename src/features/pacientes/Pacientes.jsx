@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useDatabase } from '../../context/DatabaseContext';
 import { useAuth } from '../../context/AuthContext';
 import HistorialEvolucionModal from './HistorialEvolucionModal';
@@ -8,10 +9,15 @@ import { Activity } from 'lucide-react';
 const Pacientes = () => {
   const { pacientes, examenes, agregarPaciente, editarPaciente, eliminarPaciente } = useDatabase();
   const { isManager } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
   
+  const returnTo = location.state?.returnTo;
+
   const [editandoId, setEditandoId] = useState(null);
   const [pacienteSeleccionadoEvolucion, setPacienteSeleccionadoEvolucion] = useState(null);
   const [nombre, setNombre] = useState('');
+  const [apellidos, setApellidos] = useState('');
   const [telefono, setTelefono] = useState('');
   const [correo, setCorreo] = useState('');
   const [fechaNacimiento, setFechaNacimiento] = useState('');
@@ -26,41 +32,46 @@ const Pacientes = () => {
 
   const resetForm = () => {
     setEditandoId(null);
-    setNombre(''); setTelefono(''); setCorreo(''); setFechaNacimiento('');
+    setNombre(''); setApellidos(''); setTelefono(''); setCorreo(''); setFechaNacimiento('');
     setPeso(''); setEstatura(''); setHistorialClinico(''); setDireccion('');
   };
 
-  const handleGuardar = (e) => {
+  const handleGuardar = async (e) => {
     e.preventDefault();
-    if (!nombre || !telefono || !correo || !fechaNacimiento) {
-      setError('Nombre, teléfono, correo y fecha de nacimiento son obligatorios');
+    if (!nombre || !apellidos || !telefono || !correo || !fechaNacimiento) {
+      setError('Nombre, apellidos, teléfono, correo y fecha de nacimiento son obligatorios');
       return;
     }
     
-    const pacienteData = { nombre, telefono, correo, fechaNacimiento, peso, estatura, historialClinico, direccion };
+    const pacienteData = { nombre, apellidos, telefono, correo, fechaNacimiento, peso, estatura, historialClinico, direccion };
 
     if (editandoId) {
       editarPaciente(editandoId, pacienteData);
       setMensaje('Paciente actualizado exitosamente.');
       setError('');
       resetForm();
+      setTimeout(() => setMensaje(''), 3000);
     } else {
-      const exito = agregarPaciente(pacienteData);
+      const exito = await agregarPaciente(pacienteData);
       if (exito) {
+        if (returnTo) {
+          navigate(returnTo, { state: { newPacienteId: exito.id } });
+          return;
+        }
         setMensaje('Paciente registrado exitosamente.');
         setError('');
         resetForm();
+        setTimeout(() => setMensaje(''), 3000);
       } else {
         setError('Ya existe un paciente con este nombre o teléfono.');
       }
     }
-    
-    setTimeout(() => setMensaje(''), 3000);
   };
 
   const iniciarEdicion = (pac) => {
     setEditandoId(pac.id);
     setNombre(pac.nombre);
+    setApellidos(pac.apellidos || '');
     setTelefono(pac.telefono);
     setCorreo(pac.correo);
     setFechaNacimiento(pac.fechaNacimiento);
@@ -70,22 +81,43 @@ const Pacientes = () => {
     setDireccion(pac.direccion || '');
   };
 
+  const searchTerm = (nombre + ' ' + apellidos).toLowerCase().trim();
+  const pacientesFiltrados = searchTerm
+    ? pacientes.filter(p => {
+        const fullName = `${p.nombre} ${p.apellidos || ''}`.toLowerCase();
+        return fullName.includes(searchTerm) || p.telefono.includes(searchTerm);
+      })
+    : pacientes;
+
   return (
     <div>
       <h2 style={{ color: '#1e293b', marginBottom: '1.5rem' }}>Expedientes de Pacientes</h2>
       
       <div className="responsive-grid">
         <div style={{ backgroundColor: '#f8fafc', padding: '1.5rem', borderRadius: '8px', border: '1px solid #e2e8f0', height: 'fit-content' }}>
-          <h3 style={{ marginTop: 0, marginBottom: '1rem', color: '#334155' }}>
-            {editandoId ? 'Editar Paciente' : 'Nuevo Paciente'}
-          </h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <h3 style={{ margin: 0, color: '#334155' }}>
+              {editandoId ? 'Editar Paciente' : 'Nuevo Paciente'}
+            </h3>
+            {returnTo && (
+              <button onClick={() => navigate(returnTo)} style={{ padding: '0.4rem 0.8rem', backgroundColor: '#e2e8f0', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.85rem' }}>
+                Volver
+              </button>
+            )}
+          </div>
           {mensaje && <div style={{ backgroundColor: '#dcfce7', color: '#166534', padding: '0.5rem', borderRadius: '4px', marginBottom: '1rem' }}>{mensaje}</div>}
           {error && <div style={{ backgroundColor: '#fee2e2', color: '#991b1b', padding: '0.5rem', borderRadius: '4px', marginBottom: '1rem' }}>{error}</div>}
           
           <form onSubmit={handleGuardar} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            <div>
-              <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '0.25rem' }}>Nombre Completo *</label>
-              <input type="text" value={nombre} onChange={e => setNombre(e.target.value)} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} required />
+            <div style={{ display: 'flex', gap: '1rem' }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '0.25rem' }}>Nombre(s) *</label>
+                <input type="text" value={nombre} onChange={e => setNombre(e.target.value)} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} required />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '0.25rem' }}>Apellidos *</label>
+                <input type="text" value={apellidos} onChange={e => setApellidos(e.target.value)} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} required />
+              </div>
             </div>
             <div style={{ display: 'flex', gap: '1rem' }}>
               <div style={{ flex: 1 }}>
@@ -145,10 +177,10 @@ const Pacientes = () => {
               </tr>
             </thead>
             <tbody>
-              {pacientes.map(pac => (
+              {pacientesFiltrados.map(pac => (
                 <tr key={pac.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
                   <td style={{ padding: '0.75rem', color: '#64748b' }}>#{pac.id}</td>
-                  <td style={{ padding: '0.75rem', fontWeight: 'bold' }}>{pac.nombre}</td>
+                  <td style={{ padding: '0.75rem', fontWeight: 'bold' }}>{pac.nombre} {pac.apellidos || ''}</td>
                   <td style={{ padding: '0.75rem' }}>
                     <div>{pac.telefono}</div>
                     <div style={{ fontSize: '0.85rem', color: '#64748b' }}>{pac.correo}</div>

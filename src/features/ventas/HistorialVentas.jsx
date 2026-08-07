@@ -96,7 +96,8 @@ const HistorialVentas = () => {
           </thead>
           <tbody>
             {ventasFiltradas.map(venta => {
-              const cliente = venta?.pacienteId ? (pacientes.find(p => p.id === venta.pacienteId)?.nombre || 'Cliente sin registro') : 'Venta de Mostrador';
+              const pacienteMatches = pacientes.find(p => String(p.id) === String(venta.pacienteId));
+              const cliente = venta?.pacienteId ? (pacienteMatches ? `${pacienteMatches.nombre} ${pacienteMatches.apellidos || ''}`.trim() : 'Cliente sin registro') : 'Venta de Mostrador';
               const isExpanded = ventaExpandida === venta.id;
               
               return (

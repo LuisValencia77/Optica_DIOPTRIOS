@@ -5,6 +5,9 @@ const { Pool } = pkg;
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import multer from 'multer';
+import fs from 'fs';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -16,6 +19,25 @@ const puerto = process.env.PORT || 4000;
 
 aplicacion.use(cors({ origin: true }));
 aplicacion.use(express.json());
+
+// Configuración de multer para subir imágenes
+const uploadDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir);
+}
+const storage = multer.diskStorage({
+  destination: (peticion, archivo, callback) => {
+    callback(null, uploadDir);
+  },
+  filename: (peticion, archivo, callback) => {
+    const sufijoUnico = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    callback(null, sufijoUnico + path.extname(archivo.originalname));
+  }
+});
+const upload = multer({ storage });
+
+// Servir la carpeta de uploads públicamente
+aplicacion.use('/uploads', express.static(uploadDir));
 
 // Base de datos
 const conexionBd = new Pool({
@@ -49,6 +71,7 @@ const inicializarTablas = async () => {
       CREATE TABLE IF NOT EXISTS pacientes (
         id BIGINT PRIMARY KEY,
         nombre VARCHAR(255) NOT NULL,
+        apellidos VARCHAR(255) DEFAULT '',
         telefono VARCHAR(64) NOT NULL,
         correo VARCHAR(255) NOT NULL,
         fechaNacimiento DATE NOT NULL,
@@ -95,6 +118,9 @@ const inicializarTablas = async () => {
         FOREIGN KEY (pacienteId) REFERENCES pacientes(id) ON DELETE SET NULL
       );
     `);
+    
+    await conexionBd.query(`ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS apellidos VARCHAR(255) DEFAULT '';`);
+    
     console.log('✅ Tablas verificadas en PostgreSQL.');
   } catch (error) {
     console.error('❌ Fallo al construir tablas:', error);
@@ -113,13 +139,13 @@ aplicacion.get('/api/pacientes', async (peticion, respuesta) => {
 
 aplicacion.post('/api/pacientes', async (peticion, respuesta) => {
   try {
-    const { id, nombre, telefono, correo, fechaNacimiento, peso, estatura, historialClinico, direccion } = peticion.body;
+    const { id, nombre, apellidos, telefono, correo, fechaNacimiento, peso, estatura, historialClinico, direccion } = peticion.body;
     const consulta = `
-      INSERT INTO pacientes (id, nombre, telefono, correo, fechaNacimiento, peso, estatura, historialClinico, direccion)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      INSERT INTO pacientes (id, nombre, apellidos, telefono, correo, fechaNacimiento, peso, estatura, historialClinico, direccion)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       RETURNING *;
     `;
-    const valores = [id, nombre, telefono, correo, fechaNacimiento, peso, estatura, historialClinico, direccion];
+    const valores = [id, nombre, apellidos, telefono, correo, fechaNacimiento, peso, estatura, historialClinico, direccion];
     const { rows: filas } = await conexionBd.query(consulta, valores);
     respuesta.status(201).json(filas[0]);
   } catch (error) {
@@ -129,6 +155,19 @@ aplicacion.post('/api/pacientes', async (peticion, respuesta) => {
 });
 
 // Rutas inventario
+aplicacion.post('/api/upload', upload.single('imagen'), (peticion, respuesta) => {
+  try {
+    if (!peticion.file) {
+      return respuesta.status(400).json({ error: 'No se recibió ningún archivo.' });
+    }
+    const imageUrl = `/uploads/${peticion.file.filename}`;
+    respuesta.json({ imageUrl });
+  } catch (error) {
+    console.error('❌ Error subiendo imagen:', error.message);
+    respuesta.status(500).json({ error: 'Error interno al subir la imagen' });
+  }
+});
+
 aplicacion.get('/api/inventario', async (peticion, respuesta) => {
   try {
     const { rows: filas } = await conexionBd.query('SELECT * FROM inventario ORDER BY id DESC');
@@ -151,6 +190,30 @@ aplicacion.post('/api/inventario', async (peticion, respuesta) => {
     respuesta.status(201).json(filas[0]);
   } catch (error) {
     console.error('❌ Error guardando inventario:', error.message);
+    respuesta.status(500).json({ error: error.message });
+  }
+});
+
+aplicacion.put('/api/inventario/:id', async (peticion, respuesta) => {
+  try {
+    const { id } = peticion.params;
+    const { marca, modelo, tipo, cantidad, precio, imagen } = peticion.body;
+    const consulta = `
+      UPDATE inventario 
+      SET marca = $1, modelo = $2, tipo = $3, cantidad = $4, precio = $5, imagen = $6
+      WHERE id = $7
+      RETURNING *;
+    `;
+    const valores = [marca, modelo, tipo, cantidad, precio, imagen, id];
+    const { rows: filas } = await conexionBd.query(consulta, valores);
+    
+    if (filas.length === 0) {
+      return respuesta.status(404).json({ error: 'Producto no encontrado' });
+    }
+    
+    respuesta.json(filas[0]);
+  } catch (error) {
+    console.error('❌ Error actualizando inventario:', error.message);
     respuesta.status(500).json({ error: error.message });
   }
 });
@@ -209,6 +272,47 @@ aplicacion.post('/api/examenes', async (peticion, respuesta) => {
   }
 });
 
+aplicacion.put('/api/examenes/:id', async (peticion, respuesta) => {
+  try {
+    const { id } = peticion.params;
+    const { pacienteId, od, oi, tipoArmazon, tratamientoLentes } = peticion.body;
+    const consulta = `
+      UPDATE examenes 
+      SET pacienteId = $1, od = $2, oi = $3, tipoArmazon = $4, tratamientoLentes = $5
+      WHERE id = $6
+      RETURNING *;
+    `;
+    const valores = [pacienteId, JSON.stringify(od), JSON.stringify(oi), tipoArmazon, tratamientoLentes, id];
+    const { rows: filas } = await conexionBd.query(consulta, valores);
+    
+    if (filas.length === 0) {
+      return respuesta.status(404).json({ error: 'Examen no encontrado' });
+    }
+    
+    respuesta.json(filas[0]);
+  } catch (error) {
+    console.error('❌ Error actualizando examen:', error.message);
+    respuesta.status(500).json({ error: error.message });
+  }
+});
+
+aplicacion.delete('/api/examenes/:id', async (peticion, respuesta) => {
+  try {
+    const { id } = peticion.params;
+    const consulta = 'DELETE FROM examenes WHERE id = $1 RETURNING *;';
+    const { rows: filas } = await conexionBd.query(consulta, [id]);
+    
+    if (filas.length === 0) {
+      return respuesta.status(404).json({ error: 'Examen no encontrado' });
+    }
+    
+    respuesta.json({ mensaje: 'Examen eliminado correctamente' });
+  } catch (error) {
+    console.error('❌ Error eliminando examen:', error.message);
+    respuesta.status(500).json({ error: error.message });
+  }
+});
+
 import nodemailer from 'nodemailer';
 
 // Configuración de transportador de correo (Gmail API / SMTP)
@@ -233,7 +337,7 @@ const enviarEmail = async ({ destinatario, asunto, html }) => {
     return { simulación: true };
   }
   return await transporter.sendMail({
-    from: `"Óptica" <${process.env.GMAIL_USER}>`,
+    from: `"Dioptrios" <${process.env.GMAIL_USER}>`,
     to: destinatario,
     subject: asunto,
     html: html,
@@ -305,7 +409,7 @@ aplicacion.post('/api/pedidos/enviar-correo-confirmacion', async (peticion, resp
     const htmlContent = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
         <div style="background-color: #2563eb; color: white; padding: 20px; text-align: center;">
-          <h1 style="margin: 0; font-size: 24px;">Óptica - Confirmación de Pedido</h1>
+          <h1 style="margin: 0; font-size: 24px;">Dioptrios - Confirmación de Pedido</h1>
         </div>
         <div style="padding: 20px;">
           <p>Hola <strong>${nombreCliente || 'Cliente'}</strong>,</p>
@@ -335,14 +439,14 @@ aplicacion.post('/api/pedidos/enviar-correo-confirmacion', async (peticion, resp
           <p style="margin-top: 20px; font-size: 14px; color: #64748b;">Te notificaremos por este mismo medio cuando tus productos / lentes estén listos para ser recogidos en nuestra sucursal.</p>
         </div>
         <div style="background-color: #f8fafc; padding: 10px; text-align: center; font-size: 12px; color: #94a3b8; border-top: 1px solid #e2e8f0;">
-          Óptica - Excelente visión a tu alcance
+          Dioptrios - Excelente visión a tu alcance
         </div>
       </div>
     `;
 
     await enviarEmail({
       destinatario: correoDestino,
-      asunto: `Confirmación de Venta y Pedido #${pedidoId || ''} - Óptica`,
+      asunto: `Confirmación de Venta y Pedido #${pedidoId || ''} - Dioptrios`,
       html: htmlContent,
     });
 
@@ -371,7 +475,7 @@ aplicacion.post('/api/pedidos/notificar-listo', async (peticion, respuesta) => {
         </div>
         <div style="padding: 20px;">
           <p>Estimado(a) <strong>${nombreCliente || 'Cliente'}</strong>,</p>
-          <p>Nos complace informarte que tus productos y/o lentes del pedido <strong>#${pedidoId || ''}</strong> ya se encuentran terminados y listos para pasar a recoger en la sucursal de la óptica.</p>
+          <p>Nos complace informarte que tus productos y/o lentes del pedido <strong>#${pedidoId || ''}</strong> ya se encuentran terminados y listos para pasar a recoger en la sucursal de Dioptrios.</p>
           
           ${itemsList ? `<h3 style="color: #1e293b;">Resumen del Pedido:</h3><ul>${itemsList}</ul>` : ''}
 
@@ -380,17 +484,17 @@ aplicacion.post('/api/pedidos/notificar-listo', async (peticion, respuesta) => {
             <p style="margin: 5px 0 0 0; color: #15803d; font-size: 14px;">Puedes pasar por tu producto en nuestros horarios habituales de atención.</p>
           </div>
 
-          <p style="font-size: 14px; color: #64748b;">Recuerda presentar tu ticket de compra o número de pedido al momento de acudir a la óptica.</p>
+          <p style="font-size: 14px; color: #64748b;">Recuerda presentar tu ticket de compra o número de pedido al momento de acudir a Dioptrios.</p>
         </div>
         <div style="background-color: #f8fafc; padding: 10px; text-align: center; font-size: 12px; color: #94a3b8; border-top: 1px solid #e2e8f0;">
-          Óptica - Atendiendo con excelencia tu salud visual
+          Dioptrios - Atendiendo con excelencia tu salud visual
         </div>
       </div>
     `;
 
     await enviarEmail({
       destinatario: correoDestino,
-      asunto: `¡Tu pedido #${pedidoId || ''} está listo para recojer! - Óptica`,
+      asunto: `¡Tu pedido #${pedidoId || ''} está listo para recojer! - Dioptrios`,
       html: htmlContent,
     });
 

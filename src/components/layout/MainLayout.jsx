@@ -33,7 +33,7 @@ const MainLayout = ({ children }) => {
             <div style={{ width: '32px', height: '32px', backgroundColor: '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '4px' }}>
               <Glasses size={20} color="white" />
             </div>
-            <span style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>ÓPTICA</span>
+            <span style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>DIOPTRIOS</span>
           </div>
           {/* Botón cerrar solo visible en móvil */}
           <button className="menu-toggle-btn" onClick={closeSidebar} style={{ padding: 0 }}>

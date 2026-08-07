@@ -41,9 +41,32 @@ export const DatabaseProvider = ({ children }) => {
 
         setInventario(inventarioData);
         setPacientes(pacientesData);
-        setExamenes(examenesData);
-        setPedidos(pedidosData || []);
-        setVentas(ventasData);
+        setExamenes(examenesData.map(e => ({
+          ...e,
+          pacienteId: e.pacienteId || e.pacienteid,
+          tipoArmazon: e.tipoArmazon || e.tipoarmazon,
+          tratamientoLentes: e.tratamientoLentes || e.tratamientolentes,
+          od: typeof e.od === 'string' ? JSON.parse(e.od) : (e.od || {}),
+          oi: typeof e.oi === 'string' ? JSON.parse(e.oi) : (e.oi || {})
+        })));
+        setPedidos((pedidosData || []).map(p => ({
+          ...p,
+          examenId: p.examenId || p.examenid,
+          pacienteId: p.pacienteId || p.pacienteid,
+          productos: typeof p.productos === 'string' ? JSON.parse(p.productos) : (p.productos || [])
+        })));
+        setVentas(ventasData.map(v => ({
+          ...v,
+          pacienteId: v.pacienteId || v.pacienteid,
+          subtotalCarrito: v.subtotalCarrito || v.subtotalcarrito,
+          saldoPendiente: v.saldoPendiente || v.saldopendiente,
+          estadoPago: v.estadoPago || v.estadopago,
+          lentesTerminados: v.lentesTerminados !== undefined ? v.lentesTerminados : v.lentesterminados,
+          motivoNoTerminado: v.motivoNoTerminado || v.motivonoterminado,
+          examenId: v.examenId || v.examenid,
+          detallesLentes: typeof (v.detallesLentes || v.detalleslentes) === 'string' ? JSON.parse(v.detallesLentes || v.detalleslentes) : (v.detallesLentes || v.detalleslentes || {}),
+          productos: typeof v.productos === 'string' ? JSON.parse(v.productos) : (v.productos || [])
+        })));
         setLoading(false);
       } catch (error) {
         if (cancelled) return;
@@ -59,7 +82,7 @@ export const DatabaseProvider = ({ children }) => {
     fetchInitialData();
     const handleFocus = () => fetchInitialData();
     window.addEventListener('focus', handleFocus);
-    
+
     return () => {
       cancelled = true;
       window.removeEventListener('focus', handleFocus);
@@ -67,6 +90,29 @@ export const DatabaseProvider = ({ children }) => {
   }, []);
 
   // --- SECCIÓN DE INYECCIÓN DE DATOS --- //
+
+  const subirImagen = async (archivo) => {
+    try {
+      const formData = new FormData();
+      formData.append('imagen', archivo);
+
+      const response = await fetch(`${API_BASE}/upload`, {
+        method: 'POST',
+        body: formData, // No poner headers 'Content-Type', fetch lo configura automáticamente para FormData
+      });
+
+      if (!response.ok) {
+        throw new Error('Error al subir la imagen');
+      }
+
+      const data = await response.json();
+      return data.imageUrl; // Retorna la ruta ej: /uploads/162817281.png
+    } catch (error) {
+      console.error('❌ Error subiendo imagen:', error);
+      alert('No se pudo subir la imagen.');
+      return null;
+    }
+  };
 
   const agregarProducto = async (producto) => {
     const newProduct = { ...producto, id: Date.now() };
@@ -76,13 +122,13 @@ export const DatabaseProvider = ({ children }) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newProduct),
       });
-      
+
       // Validación estricta para evitar fallos silenciosos
       if (!response.ok) {
-          const errData = await response.json();
-          throw new Error(errData.error || 'Fallo interno en el servidor');
+        const errData = await response.json();
+        throw new Error(errData.error || 'Fallo interno en el servidor');
       }
-      
+
       const created = await response.json();
       setInventario(prev => [created, ...prev]);
       return created;
@@ -93,12 +139,12 @@ export const DatabaseProvider = ({ children }) => {
   };
 
   const agregarPaciente = async (paciente) => {
-    const alreadyExists = pacientes.some(p => p.telefono === paciente.telefono || p.nombre.toLowerCase() === paciente.nombre.toLowerCase());
+    const alreadyExists = pacientes.some(p => p.telefono === paciente.telefono || (p.nombre.toLowerCase() === paciente.nombre.toLowerCase() && (p.apellidos || '').toLowerCase() === (paciente.apellidos || '').toLowerCase()));
     if (alreadyExists) {
-        alert('Este paciente ya se encuentra registrado.');
-        return false;
+      alert('Este paciente ya se encuentra registrado.');
+      return false;
     }
-    
+
     const newPaciente = { ...paciente, id: Date.now() };
     try {
       const response = await fetch(`${API_BASE}/pacientes`, {
@@ -106,15 +152,15 @@ export const DatabaseProvider = ({ children }) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newPaciente),
       });
-      
+
       if (!response.ok) {
-          const errData = await response.json();
-          throw new Error(errData.error || 'Fallo interno en el servidor');
+        const errData = await response.json();
+        throw new Error(errData.error || 'Fallo interno en el servidor');
       }
-      
+
       const created = await response.json();
       setPacientes(prev => [created, ...prev]);
-      return true;
+      return created;
     } catch (error) {
       console.error('❌ Error creando paciente:', error);
       alert('Error en BD al guardar paciente: ' + error.message);
@@ -123,27 +169,30 @@ export const DatabaseProvider = ({ children }) => {
   };
 
   const agregarExamen = async (examen) => {
-    const newExamen = { ...examen, id: Date.now(), fecha: new Date().toISOString() };
+    const newExamen = { ...examen, id: Date.now(), fecha: new Date().toLocaleString('sv-SE') };
     try {
       const response = await fetch(`${API_BASE}/examenes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newExamen),
       });
-      
+
       if (!response.ok) {
-          const errData = await response.json();
-          throw new Error(errData.error || 'Fallo interno en el servidor');
+        const errData = await response.json();
+        throw new Error(errData.error || 'Fallo interno en el servidor');
       }
-      
+
       const created = await response.json();
       const examenNormalizado = {
         ...created,
+        pacienteId: created.pacienteId || created.pacienteid,
+        tipoArmazon: created.tipoArmazon || created.tipoarmazon,
+        tratamientoLentes: created.tratamientoLentes || created.tratamientolentes,
         od: typeof created.od === 'string' ? JSON.parse(created.od) : (created.od || {}),
         oi: typeof created.oi === 'string' ? JSON.parse(created.oi) : (created.oi || {}),
       };
       setExamenes(prev => [examenNormalizado, ...prev]);
-      
+
       // Intentar automatizar el pedido de lentes
       try {
         const productos = [];
@@ -159,19 +208,21 @@ export const DatabaseProvider = ({ children }) => {
           else productos.push({ id: `tr-${created.id}-${t}`, marca: t, modelo: '', tipo: 'Tratamiento', precio: 0, cantidad: 1 });
         });
         const total = productos.reduce((s, it) => s + (Number(it.precio) || 0) * (it.cantidad || 1), 0);
-        const pedido = { id: Date.now(), examenId: created.id, pacienteId: created.pacienteId, productos, total, estado: 'Pendiente', fecha: new Date().toISOString() };
-        
+        const pedido = { id: Date.now(), examenId: examenNormalizado.id, pacienteId: examenNormalizado.pacienteId, productos, total, estado: 'Pendiente', fecha: new Date().toLocaleString('sv-SE') };
+
         const pResp = await fetch(`${API_BASE}/pedidos`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(pedido)
         });
-        
+
         if (pResp.ok) {
-            const creadoPedido = await pResp.json();
-            const pedidoNormalizado = {
-              ...creadoPedido,
-              productos: typeof creadoPedido.productos === 'string' ? JSON.parse(creadoPedido.productos) : (creadoPedido.productos || []),
-            };
-            setPedidos(prev => [pedidoNormalizado, ...prev]);
+          const creadoPedido = await pResp.json();
+          const pedidoNormalizado = {
+            ...creadoPedido,
+            pacienteId: creadoPedido.pacienteId || creadoPedido.pacienteid,
+            examenId: creadoPedido.examenId || creadoPedido.examenid,
+            productos: typeof creadoPedido.productos === 'string' ? JSON.parse(creadoPedido.productos) : (creadoPedido.productos || []),
+          };
+          setPedidos(prev => [pedidoNormalizado, ...prev]);
         }
       } catch (pErr) {
         console.warn('⚠️ No se pudo crear pedido automático:', pErr.message);
@@ -186,19 +237,19 @@ export const DatabaseProvider = ({ children }) => {
 
   const registrarVenta = async (venta) => {
     // Emparejamos "consultaTxt" para que Node.js la reciba correctamente
-    const newSale = { ...venta, id: Date.now(), consultaTxt: venta.consulta };
+    const newSale = { ...venta, id: Date.now(), consultaTxt: venta.consulta, fecha: new Date().toLocaleString('sv-SE') };
     try {
       const response = await fetch(`${API_BASE}/ventas`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newSale),
       });
-      
+
       if (!response.ok) {
-          const errData = await response.json();
-          throw new Error(errData.error || 'Fallo interno en el servidor');
+        const errData = await response.json();
+        throw new Error(errData.error || 'Fallo interno en el servidor');
       }
-      
+
       const created = await response.json();
       const ventaNormalizada = {
         ...created,
@@ -214,7 +265,7 @@ export const DatabaseProvider = ({ children }) => {
     }
   };
 
-  
+
   const descontarStock = (productosVendidos) => {
     setInventario(prev => prev.map(prod => {
       const vendido = productosVendidos.find(p => p.id === prod.id);
@@ -262,7 +313,7 @@ export const DatabaseProvider = ({ children }) => {
   const notificarPedidoListo = async (pedidoId) => {
     const pedido = pedidos.find(p => p.id.toString() === pedidoId.toString());
     if (!pedido) return alert('Pedido no encontrado');
-    
+
     const paciente = pacientes.find(p => p.id.toString() === (pedido.pacienteId || '').toString());
     if (!paciente || !paciente.correo) {
       return alert('El paciente asociado a este pedido no tiene registrado un correo electrónico.');
@@ -295,13 +346,76 @@ export const DatabaseProvider = ({ children }) => {
     }
   };
 
-  // Funciones de actualización y borrado (Pendientes por implementar rutas PUT/DELETE en Node)
-  const editarProducto = async () => { console.warn('Endpoint PUT no implementado en backend'); };
+  // Funciones de actualización y borrado
+  const editarProducto = async (id, actualizacion) => {
+    try {
+      const response = await fetch(`${API_BASE}/inventario/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(actualizacion),
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Error al actualizar producto');
+      }
+      const updated = await response.json();
+      setInventario(prev => prev.map(p => p.id === id ? updated : p));
+      return updated;
+    } catch (error) {
+      console.error('❌ Error editando producto:', error);
+      alert('Error: ' + error.message);
+      return null;
+    }
+  };
   const eliminarProducto = async () => { console.warn('Endpoint DELETE no implementado en backend'); };
   const editarPaciente = async () => { console.warn('Endpoint PUT no implementado en backend'); };
   const eliminarPaciente = async () => { console.warn('Endpoint DELETE no implementado en backend'); };
-  const editarExamen = async () => { console.warn('Endpoint PUT no implementado en backend'); };
-  const eliminarExamen = async () => { console.warn('Endpoint DELETE no implementado en backend'); };
+  const editarExamen = async (id, actualizacion) => {
+    try {
+      const response = await fetch(`${API_BASE}/examenes/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(actualizacion),
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Error al actualizar examen');
+      }
+      const updated = await response.json();
+      const examenNormalizado = {
+        ...updated,
+        pacienteId: updated.pacienteId || updated.pacienteid,
+        tipoArmazon: updated.tipoArmazon || updated.tipoarmazon,
+        tratamientoLentes: updated.tratamientoLentes || updated.tratamientolentes,
+        od: typeof updated.od === 'string' ? JSON.parse(updated.od) : (updated.od || {}),
+        oi: typeof updated.oi === 'string' ? JSON.parse(updated.oi) : (updated.oi || {}),
+      };
+      setExamenes(prev => prev.map(e => e.id === id ? examenNormalizado : e));
+      return examenNormalizado;
+    } catch (error) {
+      console.error('❌ Error editando examen:', error);
+      alert('Error: ' + error.message);
+      return null;
+    }
+  };
+
+  const eliminarExamen = async (id) => {
+    try {
+      const response = await fetch(`${API_BASE}/examenes/${id}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Error al eliminar examen');
+      }
+      setExamenes(prev => prev.filter(e => e.id !== id));
+      return true;
+    } catch (error) {
+      console.error('❌ Error eliminando examen:', error);
+      alert('Error: ' + error.message);
+      return false;
+    }
+  };
   const actualizarPagoVenta = async () => { console.warn('Endpoint PATCH no implementado en backend'); };
 
   return (
@@ -312,6 +426,7 @@ export const DatabaseProvider = ({ children }) => {
       examenes,
       ventas,
       loading,
+      subirImagen,
       agregarProducto,
       editarProducto,
       eliminarProducto,
@@ -330,4 +445,4 @@ export const DatabaseProvider = ({ children }) => {
       {children}
     </DatabaseContext.Provider>
   );
-};
+};

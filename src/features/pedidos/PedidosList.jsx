@@ -20,7 +20,7 @@ const PedidosList = () => {
 
   const pedidosFiltrados = pedidos.filter(ped => {
     const paciente = pacientes.find(p => p.id.toString() === (ped.pacienteId || '').toString());
-    const nombrePaciente = paciente ? paciente.nombre.toLowerCase() : 'mostrador';
+    const nombrePaciente = paciente ? `${paciente.nombre} ${paciente.apellidos || ''}`.trim().toLowerCase() : 'mostrador';
     const idPedidoStr = (ped.id || '').toString();
 
     const coincideBusqueda = nombrePaciente.includes(busqueda.toLowerCase()) || idPedidoStr.includes(busqueda);
@@ -112,7 +112,7 @@ const PedidosList = () => {
                       <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 'bold' }}>PEDIDO #{pedido.id}</span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.2rem' }}>
                         <User size={16} color="#475569" />
-                        <strong style={{ color: '#1e293b', fontSize: '1rem' }}>{paciente ? paciente.nombre : 'Venta General / Mostrador'}</strong>
+                        <strong style={{ color: '#1e293b', fontSize: '1rem' }}>{paciente ? `${paciente.nombre} ${paciente.apellidos || ''}`.trim() : 'Venta General / Mostrador'}</strong>
                       </div>
                       {paciente?.correo && (
                         <span style={{ fontSize: '0.8rem', color: '#2563eb', display: 'block', marginTop: '0.1rem' }}>

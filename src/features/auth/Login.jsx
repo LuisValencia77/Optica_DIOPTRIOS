@@ -37,7 +37,7 @@ const Login = () => {
   return (
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#f0f2f5' }}>
       <div style={{ backgroundColor: 'white', padding: '2.5rem', borderRadius: '8px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', width: '100%', maxWidth: '400px' }}>
-        <h2 style={{ textAlign: 'center', marginBottom: '1.5rem', color: '#1e293b' }}>Sistema Óptica</h2>
+        <h2 style={{ textAlign: 'center', marginBottom: '1.5rem', color: '#1e293b' }}>Sistema Dioptrios</h2>
         <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           <div>
             <label htmlFor="username" style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500' }}>Usuario</label>

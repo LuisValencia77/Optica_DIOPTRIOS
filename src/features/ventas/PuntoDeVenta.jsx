@@ -6,7 +6,7 @@ const PuntoDeVenta = () => {
   const { inventario, pacientes, examenes, ventas, registrarVenta, enviarCorreoConfirmacionPedido } = useDatabase();
   const [carrito, setCarrito] = useState([]);
   const [pacienteId, setPacienteId] = useState('');
-  
+
   // Pago y extras
   const [gastosExtra, setGastosExtra] = useState('');
   const [adelanto, setAdelanto] = useState('');
@@ -74,13 +74,14 @@ const PuntoDeVenta = () => {
       return;
     }
 
-    const pacienteObj = pacientes.find((p) => p.id === (pacienteId ? parseInt(pacienteId) : null));
-    const pacienteNombre = pacienteObj?.nombre || 'Mostrador';
+    const pacienteObj = pacientes.find((p) => String(p.id) === String(pacienteId));
+    const pacienteNombre = pacienteObj ? `${pacienteObj.nombre} ${pacienteObj.apellidos || ''}`.trim() : 'Mostrador';
     const ventaId = Date.now();
 
     const venta = {
       id: ventaId,
-      pacienteId: pacienteId ? parseInt(pacienteId) : null,
+      pacienteId: pacienteId ? pacienteId.toString() : null,
+      examenId: examenSeleccionado ? examenSeleccionado.replace('ex-', '').replace('ve-', '') : null,
       productos: carrito,
       detallesLentes: {
         tratamientos: carrito.filter(i => i.tipo === 'Tratamiento'),
@@ -127,7 +128,7 @@ const PuntoDeVenta = () => {
   return (
     <div>
       <h2 style={{ color: '#1e293b', marginBottom: '1.5rem' }}>Punto de Venta</h2>
-      
+
       {mensaje && <div style={{ backgroundColor: '#dcfce7', color: '#166534', padding: '1rem', borderRadius: '4px', marginBottom: '1rem', fontWeight: 'bold' }}>{mensaje}</div>}
 
       <div className="responsive-flex">
@@ -135,30 +136,30 @@ const PuntoDeVenta = () => {
         <div style={{ flex: 2 }}>
           <div style={{ marginBottom: '1.5rem', backgroundColor: '#f8fafc', padding: '1.25rem', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
             <h3 style={{ marginTop: 0, color: '#1e293b', fontSize: '1.1rem' }}>Cargar Lentes de Examen o Liquidar Saldo Pendiente</h3>
-            
+
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.75rem' }}>
-              <select 
-                value={examenSeleccionado} 
-                onChange={e => setExamenSeleccionado(e.target.value)} 
+              <select
+                value={examenSeleccionado}
+                onChange={e => setExamenSeleccionado(e.target.value)}
                 style={{ flex: 1, padding: '0.6rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.9rem' }}
               >
                 <option value="">-- Seleccionar Lentes de Examen o Venta Pendiente --</option>
                 <optgroup label="📋 Lentes / Trabajos desde Exámenes">
                   {examenes.map(ex => {
-                    const pac = pacientes.find(p => p.id === ex.pacienteId);
-                    const label = `${pac?.nombre || 'Paciente'} - ${new Date(ex.fecha).toLocaleDateString()} (${ex.tipoArmazon || 'Armazón a medida'})`;
+                    const pac = pacientes.find(p => String(p.id) === String(ex.pacienteId));
+                    const label = `${pac ? `${pac.nombre} ${pac.apellidos || ''}`.trim() : 'Paciente'} - ${new Date(ex.fecha).toLocaleDateString()} (${ex.tipoArmazon || 'Armazón a medida'})`;
                     return <option key={`ex-${ex.id}`} value={`ex-${ex.id}`}>{label}</option>;
                   })}
                 </optgroup>
                 <optgroup label="⏳ Ventas con Saldo Pendiente por Liquidar">
                   {ventas.filter(v => Number(v.saldoPendiente) > 0).map(v => {
-                    const pac = pacientes.find(p => p.id === v.pacienteId);
-                    const label = `Venta #${v.id} - ${pac?.nombre || 'Cliente'} (Saldo restante: $${(Number(v.saldoPendiente) || 0).toFixed(2)})`;
+                    const pac = pacientes.find(p => String(p.id) === String(v.pacienteId));
+                    const label = `Venta #${v.id} - ${pac ? `${pac.nombre} ${pac.apellidos || ''}`.trim() : 'Cliente'} (Saldo restante: $${(Number(v.saldoPendiente) || 0).toFixed(2)})`;
                     return <option key={`ve-${v.id}`} value={`ve-${v.id}`}>{label}</option>;
                   })}
                 </optgroup>
               </select>
-              <button 
+              <button
                 onClick={() => {
                   if (!examenSeleccionado) return;
                   if (examenSeleccionado.startsWith('ex-')) {
@@ -175,13 +176,13 @@ const PuntoDeVenta = () => {
                       setMensaje(`Se cargó el saldo restante por liquidar de $${Number(v.saldoPendiente).toFixed(2)} de la Venta #${v.id}`);
                     }
                   }
-                }} 
+                }}
                 style={{ padding: '0.6rem 1rem', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
               >
                 Cargar
               </button>
-              <button 
-                onClick={() => { setExamenSeleccionado(''); setCarrito([]); setGastosExtra(''); setAdelanto(''); }} 
+              <button
+                onClick={() => { setExamenSeleccionado(''); setCarrito([]); setGastosExtra(''); setAdelanto(''); }}
                 style={{ padding: '0.6rem 1rem', backgroundColor: '#94a3b8', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
               >
                 Limpiar
@@ -221,12 +222,12 @@ const PuntoDeVenta = () => {
         {/* Carrito y Detalles */}
         <div style={{ flex: 1, backgroundColor: '#f8fafc', padding: '1.5rem', borderRadius: '8px', border: '1px solid #cbd5e1', height: 'fit-content' }}>
           <h3 style={{ marginTop: 0, color: '#334155', borderBottom: '1px solid #cbd5e1', paddingBottom: '0.5rem' }}>Ticket de Compra</h3>
-          
+
           <div style={{ marginBottom: '1rem' }}>
             <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '0.25rem' }}>Asociar a Cliente (Opcional)</label>
             <select value={pacienteId} onChange={e => setPacienteId(e.target.value)} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1' }}>
               <option value="">Venta de mostrador</option>
-              {pacientes.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+              {pacientes.map(p => <option key={p.id} value={p.id}>{`${p.nombre} ${p.apellidos || ''}`.trim()}</option>)}
             </select>
           </div>
 
@@ -285,21 +286,21 @@ const PuntoDeVenta = () => {
               <span>Total:</span>
               <span>${(Number(total) || 0).toFixed(2)}</span>
             </div>
-            
+
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
               <label style={{ fontSize: '0.9rem', color: '#16a34a', fontWeight: 'bold' }}>Adelanto / Abono ($)</label>
               <input type="number" min="0" max={total} step="0.01" value={adelanto} onChange={e => setAdelanto(e.target.value)} style={{ width: '100px', padding: '0.5rem', borderRadius: '4px', border: '1px solid #16a34a', fontWeight: 'bold' }} />
             </div>
 
             {saldoPendiente > 0 && (
-               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.95rem', color: '#ef4444', fontWeight: 'bold', marginBottom: '1rem' }}>
-                 <span>Saldo Pendiente:</span>
-                 <span>${(Number(saldoPendiente) || 0).toFixed(2)}</span>
-               </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.95rem', color: '#ef4444', fontWeight: 'bold', marginBottom: '1rem' }}>
+                <span>Saldo Pendiente:</span>
+                <span>${(Number(saldoPendiente) || 0).toFixed(2)}</span>
+              </div>
             )}
 
-            <button 
-              onClick={handleProcesar} 
+            <button
+              onClick={handleProcesar}
               disabled={total === 0}
               style={{ width: '100%', padding: '1rem', backgroundColor: total > 0 ? '#2563eb' : '#94a3b8', color: 'white', border: 'none', borderRadius: '4px', cursor: total > 0 ? 'pointer' : 'not-allowed', fontWeight: 'bold', fontSize: '1.1rem', marginTop: '0.5rem' }}>
               Generar Ticket / Registrar

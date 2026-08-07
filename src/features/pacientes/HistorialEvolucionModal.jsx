@@ -43,7 +43,7 @@ const HistorialEvolucionModal = ({ paciente, examenes, onClose }) => {
               <Activity color="#2563eb" /> Historial de Evolución Visual
             </h3>
             <span style={{ color: '#64748b', fontSize: '0.9rem', marginTop: '0.2rem', display: 'block' }}>
-              Paciente: <strong>{paciente.nombre}</strong> (ID #{paciente.id})
+              Paciente: <strong>{`${paciente.nombre} ${paciente.apellidos || ''}`.trim()}</strong> (ID #{paciente.id})
             </span>
           </div>
           <button

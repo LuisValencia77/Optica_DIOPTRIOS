@@ -1,4 +1,4 @@
-// Generador de documentos PDF / Impresión formateada para Recetas Médicas y Tickets de Óptica
+// Generador de documentos PDF / Impresión formateada para Recetas Médicas y Tickets de Dioptrios
 
 export const generarPDFReceta = (examen, paciente) => {
   const od = typeof examen.od === 'string' ? JSON.parse(examen.od) : (examen.od || {});
@@ -24,7 +24,7 @@ export const generarPDFReceta = (examen, paciente) => {
     <html lang="es">
     <head>
       <meta charset="UTF-8" />
-      <title>Receta Oftálmica - ${paciente?.nombre || 'Paciente'}</title>
+      <title>Receta Oftálmica - ${paciente ? `${paciente.nombre} ${paciente.apellidos || ''}`.trim() : 'Paciente'}</title>
       <style>
         body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #1e293b; margin: 0; padding: 40px; background-color: #fff; }
         .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #2563eb; padding-bottom: 20px; margin-bottom: 30px; }
@@ -58,7 +58,7 @@ export const generarPDFReceta = (examen, paciente) => {
 
       <div class="header">
         <div>
-          <div class="logo-title">👓 ÓPTICA - RECETA OPTOMÉTRICA</div>
+          <div class="logo-title">👓 DIOPTRIOS - RECETA OPTOMÉTRICA</div>
           <div class="subtitle">Salud y Calidad Visual a tu Alcance</div>
         </div>
         <div class="prescription-date">
@@ -70,7 +70,7 @@ export const generarPDFReceta = (examen, paciente) => {
       <div class="patient-info">
         <div>
           <label>PACIENTE</label>
-          <strong>${paciente?.nombre || 'Paciente General'}</strong>
+          <strong>${paciente ? `${paciente.nombre} ${paciente.apellidos || ''}`.trim() : 'Paciente General'}</strong>
         </div>
         <div>
           <label>TELÉFONO</label>
