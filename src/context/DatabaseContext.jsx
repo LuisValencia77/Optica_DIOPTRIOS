@@ -8,7 +8,9 @@ export const useDatabase = () => useContext(DatabaseContext);
 const API_BASE = '/api';
 
 export const DatabaseProvider = ({ children }) => {
-  const [inventario, setInventario] = useState([]);
+  const [productos, setProductos] = useState([]);
+  const [materiales, setMateriales] = useState([]);
+  const [tratamientos, setTratamientos] = useState([]);
   const [pacientes, setPacientes] = useState([]);
   const [examenes, setExamenes] = useState([]);
   const [pedidos, setPedidos] = useState([]);
@@ -21,16 +23,20 @@ export const DatabaseProvider = ({ children }) => {
 
     const fetchInitialData = async (attempt = 0) => {
       try {
-        const [inventarioRes, pacientesRes, examenesRes, ventasRes, pedidosRes] = await Promise.all([
-          fetch(`${API_BASE}/inventario`),
+        const [productosRes, matRes, tratRes, pacientesRes, examenesRes, ventasRes, pedidosRes] = await Promise.all([
+          fetch(`${API_BASE}/productos`),
+          fetch(`${API_BASE}/materiales_cristal`),
+          fetch(`${API_BASE}/tratamientos_cristal`),
           fetch(`${API_BASE}/pacientes`),
           fetch(`${API_BASE}/examenes`),
           fetch(`${API_BASE}/ventas`),
           fetch(`${API_BASE}/pedidos`).catch(() => null),
         ]);
 
-        const [inventarioData, pacientesData, examenesData, ventasData, pedidosData] = await Promise.all([
-          inventarioRes.ok ? inventarioRes.json() : Promise.reject(new Error(`inventario: ${inventarioRes.status}`)),
+        const [productosData, matData, tratData, pacientesData, examenesData, ventasData, pedidosData] = await Promise.all([
+          productosRes.ok ? productosRes.json() : Promise.reject(new Error(`productos: ${productosRes.status}`)),
+          matRes.ok ? matRes.json() : Promise.reject(new Error(`materiales: ${matRes.status}`)),
+          tratRes.ok ? tratRes.json() : Promise.reject(new Error(`tratamientos: ${tratRes.status}`)),
           pacientesRes.ok ? pacientesRes.json() : Promise.reject(new Error(`pacientes: ${pacientesRes.status}`)),
           examenesRes.ok ? examenesRes.json() : Promise.reject(new Error(`examenes: ${examenesRes.status}`)),
           ventasRes.ok ? ventasRes.json() : Promise.reject(new Error(`ventas: ${ventasRes.status}`)),
@@ -39,7 +45,9 @@ export const DatabaseProvider = ({ children }) => {
 
         if (cancelled) return;
 
-        setInventario(inventarioData);
+        setProductos(productosData);
+        setMateriales(matData);
+        setTratamientos(tratData);
         setPacientes(pacientesData);
         setExamenes(examenesData.map(e => ({
           ...e,
@@ -92,50 +100,51 @@ export const DatabaseProvider = ({ children }) => {
   // --- SECCIÓN DE INYECCIÓN DE DATOS --- //
 
   const subirImagen = async (archivo) => {
-    try {
-      const formData = new FormData();
-      formData.append('imagen', archivo);
-
-      const response = await fetch(`${API_BASE}/upload`, {
-        method: 'POST',
-        body: formData, // No poner headers 'Content-Type', fetch lo configura automáticamente para FormData
-      });
-
-      if (!response.ok) {
-        throw new Error('Error al subir la imagen');
+    return new Promise((resolve, reject) => {
+      if (!archivo) {
+        resolve(null);
+        return;
       }
-
-      const data = await response.json();
-      return data.imageUrl; // Retorna la ruta ej: /uploads/162817281.png
-    } catch (error) {
-      console.error('❌ Error subiendo imagen:', error);
-      alert('No se pudo subir la imagen.');
-      return null;
-    }
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result); // Retorna la cadena Base64
+      reader.onerror = (error) => {
+        console.error('❌ Error convirtiendo imagen a Base64:', error);
+        alert('No se pudo procesar la imagen.');
+        reject(error);
+      };
+      reader.readAsDataURL(archivo);
+    });
   };
 
   const agregarProducto = async (producto) => {
-    const newProduct = { ...producto, id: Date.now() };
     try {
-      const response = await fetch(`${API_BASE}/inventario`, {
+      const response = await fetch(`${API_BASE}/productos`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newProduct),
+        body: JSON.stringify(producto),
       });
 
-      // Validación estricta para evitar fallos silenciosos
       if (!response.ok) {
         const errData = await response.json();
         throw new Error(errData.error || 'Fallo interno en el servidor');
       }
 
       const created = await response.json();
-      setInventario(prev => [created, ...prev]);
+      setProductos(prev => [created, ...prev]);
       return created;
     } catch (error) {
       console.error('❌ Error creando producto:', error);
       alert('Error en BD al guardar producto: ' + error.message);
     }
+  };
+
+  const agregarMaterial = async (material) => {
+    const response = await fetch(`${API_BASE}/materiales_cristal`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(material) });
+    if (response.ok) { const created = await response.json(); setMateriales(prev => [...prev, created]); return created; }
+  };
+  const agregarTratamiento = async (tratamiento) => {
+    const response = await fetch(`${API_BASE}/tratamientos_cristal`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(tratamiento) });
+    if (response.ok) { const created = await response.json(); setTratamientos(prev => [...prev, created]); return created; }
   };
 
   const agregarPaciente = async (paciente) => {
@@ -197,15 +206,15 @@ export const DatabaseProvider = ({ children }) => {
       try {
         const productos = [];
         if (created.tipoArmazon) {
-          const encontrado = inventario.find(p => p.tipo === 'Armazón' && `${p.marca} ${p.modelo}` === created.tipoArmazon);
-          if (encontrado) productos.push({ id: encontrado.id, marca: encontrado.marca, modelo: encontrado.modelo, tipo: encontrado.tipo, precio: encontrado.precio, cantidad: 1 });
-          else productos.push({ id: `ar-${created.id}`, marca: created.tipoArmazon, modelo: '', tipo: 'Armazón', precio: 0, cantidad: 1 });
+          const encontrado = productos.find(p => p.tipo_articulo === 'armazon' && `${p.marca} ${p.modelo}` === created.tipoArmazon);
+          if (encontrado) productos.push({ id: encontrado.id_producto, marca: encontrado.marca, modelo: encontrado.modelo, tipo: encontrado.tipo_articulo, precio: encontrado.precio_unitario, cantidad: 1 });
+          else productos.push({ id: `ar-${created.id}`, marca: created.tipoArmazon, modelo: '', tipo: 'armazon', precio: 0, cantidad: 1 });
         }
-        const tratamientos = Array.isArray(created.tratamientoLentes) ? created.tratamientoLentes : (created.tratamientoLentes ? created.tratamientoLentes.split(', ') : []);
-        tratamientos.forEach(t => {
-          const invT = inventario.find(p => p.tipo === 'Tratamiento' && p.marca === t);
-          if (invT) productos.push({ id: invT.id, marca: invT.marca, modelo: invT.modelo, tipo: invT.tipo, precio: invT.precio, cantidad: 1 });
-          else productos.push({ id: `tr-${created.id}-${t}`, marca: t, modelo: '', tipo: 'Tratamiento', precio: 0, cantidad: 1 });
+        const tratamientosAct = Array.isArray(created.tratamientoLentes) ? created.tratamientoLentes : (created.tratamientoLentes ? created.tratamientoLentes.split(', ') : []);
+        tratamientosAct.forEach(t => {
+          const invT = tratamientos.find(p => p.nombre === t);
+          if (invT) productos.push({ id: invT.id_tratamiento, marca: invT.nombre, modelo: '', tipo: 'tratamiento', precio: invT.costo_adicional, cantidad: 1 });
+          else productos.push({ id: `tr-${created.id}-${t}`, marca: t, modelo: '', tipo: 'tratamiento', precio: 0, cantidad: 1 });
         });
         const total = productos.reduce((s, it) => s + (Number(it.precio) || 0) * (it.cantidad || 1), 0);
         const pedido = { id: Date.now(), examenId: examenNormalizado.id, pacienteId: examenNormalizado.pacienteId, productos, total, estado: 'Pendiente', fecha: new Date().toLocaleString('sv-SE') };
@@ -267,10 +276,10 @@ export const DatabaseProvider = ({ children }) => {
 
 
   const descontarStock = (productosVendidos) => {
-    setInventario(prev => prev.map(prod => {
-      const vendido = productosVendidos.find(p => p.id === prod.id);
+    setProductos(prev => prev.map(prod => {
+      const vendido = productosVendidos.find(p => (p.id_producto || p.id) === prod.id_producto);
       if (vendido) {
-        return { ...prod, cantidad: Math.max(0, prod.cantidad - vendido.cantidadVenta) };
+        return { ...prod, cantidad_inventario: Math.max(0, prod.cantidad_inventario - vendido.cantidadVenta) };
       }
       return prod;
     }));
@@ -349,7 +358,7 @@ export const DatabaseProvider = ({ children }) => {
   // Funciones de actualización y borrado
   const editarProducto = async (id, actualizacion) => {
     try {
-      const response = await fetch(`${API_BASE}/inventario/${id}`, {
+      const response = await fetch(`${API_BASE}/productos/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(actualizacion),
@@ -359,7 +368,7 @@ export const DatabaseProvider = ({ children }) => {
         throw new Error(err.error || 'Error al actualizar producto');
       }
       const updated = await response.json();
-      setInventario(prev => prev.map(p => p.id === id ? updated : p));
+      setProductos(prev => prev.map(p => p.id_producto === id ? updated : p));
       return updated;
     } catch (error) {
       console.error('❌ Error editando producto:', error);
@@ -420,7 +429,9 @@ export const DatabaseProvider = ({ children }) => {
 
   return (
     <DatabaseContext.Provider value={{
-      inventario,
+      productos,
+      materiales,
+      tratamientos,
       pacientes,
       pedidos,
       examenes,
@@ -430,6 +441,8 @@ export const DatabaseProvider = ({ children }) => {
       agregarProducto,
       editarProducto,
       eliminarProducto,
+      agregarMaterial,
+      agregarTratamiento,
       agregarPaciente,
       editarPaciente,
       eliminarPaciente,

@@ -137,8 +137,8 @@ const ResumenActividadWidget = ({ ventas, pedidos, pacientes }) => {
 
 export const DashboardSuperUser = () => {
   const { user } = useAuth();
-  const { ventas, inventario, pacientes, examenes, pedidos } = useDatabase();
-  const summary = getDashboardSummary(ventas, inventario, pacientes, examenes);
+  const { ventas, productos, pacientes, examenes, pedidos } = useDatabase();
+  const summary = getDashboardSummary(ventas, productos, pacientes, examenes);
 
   return (
     <div>
@@ -159,8 +159,8 @@ export const DashboardSuperUser = () => {
 
 export const DashboardAdmin = () => {
   const { user } = useAuth();
-  const { ventas, inventario, pacientes, examenes, pedidos } = useDatabase();
-  const summary = getDashboardSummary(ventas, inventario, pacientes, examenes);
+  const { ventas, productos, pacientes, examenes, pedidos } = useDatabase();
+  const summary = getDashboardSummary(ventas, productos, pacientes, examenes);
 
   return (
     <div>
@@ -181,8 +181,8 @@ export const DashboardAdmin = () => {
 
 export const DashboardEmployee = () => {
   const { user } = useAuth();
-  const { ventas, inventario, pacientes, examenes, pedidos } = useDatabase();
-  const summary = getDashboardSummary(ventas, inventario, pacientes, examenes);
+  const { ventas, productos, pacientes, examenes, pedidos } = useDatabase();
+  const summary = getDashboardSummary(ventas, productos, pacientes, examenes);
 
   return (
     <div>

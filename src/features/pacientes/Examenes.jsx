@@ -37,7 +37,7 @@ const FormOjo = ({ titulo, ojo, valores, onChange }) => (
 
 
 const Examenes = () => {
-  const { pacientes, examenes, agregarExamen, editarExamen, eliminarExamen, inventario } = useDatabase();
+  const { pacientes, examenes, agregarExamen, editarExamen, eliminarExamen, productos, tratamientos } = useDatabase();
   const { isManager } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
@@ -74,18 +74,12 @@ const Examenes = () => {
 
   const opcionesArmazon = Array.from(
     new Set(
-      inventario
-        .filter(prod => prod.tipo === 'Armazón')
+      productos
+        .filter(prod => prod.tipo_articulo === 'armazon')
         .map(prod => `${prod.marca} ${prod.modelo}`)
     )
   );
-  const opcionesTratamiento = Array.from(
-    new Set(
-      inventario
-        .filter(prod => prod.tipo === 'Tratamiento')
-        .map(prod => prod.marca)
-    )
-  );
+  const opcionesTratamiento = tratamientos.map(t => t.nombre);
 
   const resetForm = () => {
     setEditandoId(null);

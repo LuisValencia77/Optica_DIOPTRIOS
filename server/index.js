@@ -5,9 +5,6 @@ const { Pool } = pkg;
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import multer from 'multer';
-import fs from 'fs';
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -18,26 +15,9 @@ const aplicacion = express();
 const puerto = process.env.PORT || 4000;
 
 aplicacion.use(cors({ origin: true }));
-aplicacion.use(express.json());
+aplicacion.use(express.json({ limit: '10mb' }));
 
-// Configuración de multer para subir imágenes
-const uploadDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir);
-}
-const storage = multer.diskStorage({
-  destination: (peticion, archivo, callback) => {
-    callback(null, uploadDir);
-  },
-  filename: (peticion, archivo, callback) => {
-    const sufijoUnico = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    callback(null, sufijoUnico + path.extname(archivo.originalname));
-  }
-});
-const upload = multer({ storage });
 
-// Servir la carpeta de uploads públicamente
-aplicacion.use('/uploads', express.static(uploadDir));
 
 // Base de datos
 const conexionBd = new Pool({
@@ -59,14 +39,60 @@ const inicializarTablas = async () => {
         role VARCHAR(64) NOT NULL,
         name VARCHAR(255) NOT NULL
       );
-      CREATE TABLE IF NOT EXISTS inventario (
-        id BIGINT PRIMARY KEY,
+      CREATE TABLE IF NOT EXISTS productos (
+        id_producto SERIAL PRIMARY KEY,
+        tipo_articulo VARCHAR(64) NOT NULL,
         marca VARCHAR(255) NOT NULL,
         modelo VARCHAR(255) NOT NULL,
-        tipo VARCHAR(64) NOT NULL,
-        cantidad INT NOT NULL,
-        precio DECIMAL(12,2) NOT NULL,
-        imagen VARCHAR(512) DEFAULT NULL
+        cantidad_inventario INT NOT NULL,
+        precio_unitario DECIMAL(12,2) NOT NULL,
+        ruta_imagen TEXT DEFAULT NULL
+      );
+      CREATE TABLE IF NOT EXISTS armazones (
+        id_producto INT PRIMARY KEY,
+        color VARCHAR(64),
+        material VARCHAR(128),
+        medida_puente VARCHAR(64),
+        medida_varilla VARCHAR(64),
+        FOREIGN KEY (id_producto) REFERENCES productos(id_producto) ON DELETE CASCADE
+      );
+      CREATE TABLE IF NOT EXISTS lentes_contacto (
+        id_producto INT PRIMARY KEY,
+        curva_base VARCHAR(64),
+        diametro VARCHAR(64),
+        poder_esferico VARCHAR(64),
+        dias_reemplazo INT,
+        fecha_caducidad DATE,
+        FOREIGN KEY (id_producto) REFERENCES productos(id_producto) ON DELETE CASCADE
+      );
+      CREATE TABLE IF NOT EXISTS materiales_cristal (
+        id_material SERIAL PRIMARY KEY,
+        nombre VARCHAR(128) NOT NULL,
+        descripcion TEXT
+      );
+      CREATE TABLE IF NOT EXISTS cristales (
+        id_producto INT PRIMARY KEY,
+        id_material INT,
+        esfera VARCHAR(64),
+        cilindro VARCHAR(64),
+        eje VARCHAR(64),
+        adicion VARCHAR(64),
+        tipo_lente VARCHAR(64),
+        FOREIGN KEY (id_producto) REFERENCES productos(id_producto) ON DELETE CASCADE,
+        FOREIGN KEY (id_material) REFERENCES materiales_cristal(id_material) ON DELETE SET NULL
+      );
+      CREATE TABLE IF NOT EXISTS tratamientos_cristal (
+        id_tratamiento SERIAL PRIMARY KEY,
+        nombre VARCHAR(128) NOT NULL,
+        descripcion TEXT,
+        costo_adicional DECIMAL(12,2) DEFAULT 0
+      );
+      CREATE TABLE IF NOT EXISTS detalle_tratamientos_cristal (
+        id_producto INT,
+        id_tratamiento INT,
+        PRIMARY KEY (id_producto, id_tratamiento),
+        FOREIGN KEY (id_producto) REFERENCES cristales(id_producto) ON DELETE CASCADE,
+        FOREIGN KEY (id_tratamiento) REFERENCES tratamientos_cristal(id_tratamiento) ON DELETE CASCADE
       );
       CREATE TABLE IF NOT EXISTS pacientes (
         id BIGINT PRIMARY KEY,
@@ -115,11 +141,14 @@ const inicializarTablas = async () => {
         examenId BIGINT,
         consulta TEXT,
         fecha TIMESTAMP NOT NULL,
+        graduacion TEXT,
         FOREIGN KEY (pacienteId) REFERENCES pacientes(id) ON DELETE SET NULL
       );
     `);
     
     await conexionBd.query(`ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS apellidos VARCHAR(255) DEFAULT '';`);
+    await conexionBd.query(`ALTER TABLE ventas ADD COLUMN IF NOT EXISTS graduacion TEXT;`);
+    await conexionBd.query(`ALTER TABLE productos ALTER COLUMN ruta_imagen TYPE TEXT;`);
     
     console.log('✅ Tablas verificadas en PostgreSQL.');
   } catch (error) {
@@ -155,65 +184,167 @@ aplicacion.post('/api/pacientes', async (peticion, respuesta) => {
 });
 
 // Rutas inventario
-aplicacion.post('/api/upload', upload.single('imagen'), (peticion, respuesta) => {
+aplicacion.get('/api/productos', async (peticion, respuesta) => {
   try {
-    if (!peticion.file) {
-      return respuesta.status(400).json({ error: 'No se recibió ningún archivo.' });
-    }
-    const imageUrl = `/uploads/${peticion.file.filename}`;
-    respuesta.json({ imageUrl });
-  } catch (error) {
-    console.error('❌ Error subiendo imagen:', error.message);
-    respuesta.status(500).json({ error: 'Error interno al subir la imagen' });
-  }
-});
-
-aplicacion.get('/api/inventario', async (peticion, respuesta) => {
-  try {
-    const { rows: filas } = await conexionBd.query('SELECT * FROM inventario ORDER BY id DESC');
-    respuesta.json(filas);
+    const query = `
+      SELECT p.*,
+        a.color, a.material, a.medida_puente, a.medida_varilla,
+        l.curva_base, l.diametro, l.poder_esferico, l.dias_reemplazo, l.fecha_caducidad,
+        c.id_material, c.esfera, c.cilindro, c.eje, c.adicion, c.tipo_lente
+      FROM productos p
+      LEFT JOIN armazones a ON p.id_producto = a.id_producto
+      LEFT JOIN lentes_contacto l ON p.id_producto = l.id_producto
+      LEFT JOIN cristales c ON p.id_producto = c.id_producto
+      ORDER BY p.id_producto DESC
+    `;
+    const { rows } = await conexionBd.query(query);
+    
+    const tratQuery = `
+      SELECT dt.id_producto, tc.id_tratamiento, tc.nombre, tc.costo_adicional
+      FROM detalle_tratamientos_cristal dt
+      JOIN tratamientos_cristal tc ON dt.id_tratamiento = tc.id_tratamiento
+    `;
+    const trats = await conexionBd.query(tratQuery);
+    
+    const productosMap = rows.map(r => {
+      if(r.tipo_articulo === 'cristal') {
+        r.tratamientos = trats.rows.filter(t => t.id_producto === r.id_producto);
+      }
+      return r;
+    });
+    
+    respuesta.json(productosMap);
   } catch (error) {
     respuesta.status(500).json({ error: error.message });
   }
 });
 
-aplicacion.post('/api/inventario', async (peticion, respuesta) => {
+aplicacion.post('/api/productos', async (peticion, respuesta) => {
+  const cliente = await conexionBd.connect();
   try {
-    const { id, marca, modelo, tipo, cantidad, precio, imagen } = peticion.body;
-    const consulta = `
-      INSERT INTO inventario (id, marca, modelo, tipo, cantidad, precio, imagen) 
-      VALUES ($1, $2, $3, $4, $5, $6, $7) 
-      RETURNING *;
-    `;
-    const valores = [id, marca, modelo, tipo, cantidad, precio, imagen];
-    const { rows: filas } = await conexionBd.query(consulta, valores);
-    respuesta.status(201).json(filas[0]);
+    await cliente.query('BEGIN');
+    const { tipo_articulo, marca, modelo, cantidad_inventario, precio_unitario, ruta_imagen, ...especificos } = peticion.body;
+    
+    const prodRes = await cliente.query(
+      'INSERT INTO productos (tipo_articulo, marca, modelo, cantidad_inventario, precio_unitario, ruta_imagen) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+      [tipo_articulo, marca, modelo, cantidad_inventario, precio_unitario, ruta_imagen]
+    );
+    const id_producto = prodRes.rows[0].id_producto;
+
+    if (tipo_articulo === 'armazon') {
+      await cliente.query(
+        'INSERT INTO armazones (id_producto, color, material, medida_puente, medida_varilla) VALUES ($1, $2, $3, $4, $5)',
+        [id_producto, especificos.color, especificos.material, especificos.medida_puente, especificos.medida_varilla]
+      );
+    } else if (tipo_articulo === 'lente_contacto') {
+      await cliente.query(
+        'INSERT INTO lentes_contacto (id_producto, curva_base, diametro, poder_esferico, dias_reemplazo, fecha_caducidad) VALUES ($1, $2, $3, $4, $5, $6)',
+        [id_producto, especificos.curva_base, especificos.diametro, especificos.poder_esferico, especificos.dias_reemplazo, especificos.fecha_caducidad || null]
+      );
+    } else if (tipo_articulo === 'cristal') {
+      await cliente.query(
+        'INSERT INTO cristales (id_producto, id_material, esfera, cilindro, eje, adicion, tipo_lente) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+        [id_producto, especificos.id_material, especificos.esfera, especificos.cilindro, especificos.eje, especificos.adicion, especificos.tipo_lente]
+      );
+      if (especificos.tratamientos && especificos.tratamientos.length > 0) {
+        for (const tId of especificos.tratamientos) {
+          await cliente.query('INSERT INTO detalle_tratamientos_cristal (id_producto, id_tratamiento) VALUES ($1, $2)', [id_producto, tId]);
+        }
+      }
+    }
+
+    await cliente.query('COMMIT');
+    respuesta.status(201).json({ ...prodRes.rows[0], ...especificos });
   } catch (error) {
-    console.error('❌ Error guardando inventario:', error.message);
+    await cliente.query('ROLLBACK');
+    console.error('❌ Error guardando producto:', error.message);
+    respuesta.status(500).json({ error: error.message });
+  } finally {
+    cliente.release();
+  }
+});
+
+aplicacion.put('/api/productos/:id', async (peticion, respuesta) => {
+  const { id } = peticion.params;
+  const cliente = await conexionBd.connect();
+  try {
+    await cliente.query('BEGIN');
+    const { tipo_articulo, marca, modelo, cantidad_inventario, precio_unitario, ruta_imagen, ...especificos } = peticion.body;
+    
+    const prodRes = await cliente.query(
+      'UPDATE productos SET tipo_articulo=$1, marca=$2, modelo=$3, cantidad_inventario=$4, precio_unitario=$5, ruta_imagen=$6 WHERE id_producto=$7 RETURNING *',
+      [tipo_articulo, marca, modelo, cantidad_inventario, precio_unitario, ruta_imagen, id]
+    );
+
+    if (tipo_articulo === 'armazon') {
+      await cliente.query(
+        'UPDATE armazones SET color=$1, material=$2, medida_puente=$3, medida_varilla=$4 WHERE id_producto=$5',
+        [especificos.color, especificos.material, especificos.medida_puente, especificos.medida_varilla, id]
+      );
+    } else if (tipo_articulo === 'lente_contacto') {
+      await cliente.query(
+        'UPDATE lentes_contacto SET curva_base=$1, diametro=$2, poder_esferico=$3, dias_reemplazo=$4, fecha_caducidad=$5 WHERE id_producto=$6',
+        [especificos.curva_base, especificos.diametro, especificos.poder_esferico, especificos.dias_reemplazo, especificos.fecha_caducidad || null, id]
+      );
+    } else if (tipo_articulo === 'cristal') {
+      await cliente.query(
+        'UPDATE cristales SET id_material=$1, esfera=$2, cilindro=$3, eje=$4, adicion=$5, tipo_lente=$6 WHERE id_producto=$7',
+        [especificos.id_material, especificos.esfera, especificos.cilindro, especificos.eje, especificos.adicion, especificos.tipo_lente, id]
+      );
+      await cliente.query('DELETE FROM detalle_tratamientos_cristal WHERE id_producto=$1', [id]);
+      if (especificos.tratamientos && especificos.tratamientos.length > 0) {
+        for (const tId of especificos.tratamientos) {
+          await cliente.query('INSERT INTO detalle_tratamientos_cristal (id_producto, id_tratamiento) VALUES ($1, $2)', [id, tId]);
+        }
+      }
+    }
+
+    await cliente.query('COMMIT');
+    respuesta.json({ ...prodRes.rows[0], ...especificos });
+  } catch (error) {
+    await cliente.query('ROLLBACK');
+    console.error('❌ Error actualizando producto:', error.message);
+    respuesta.status(500).json({ error: error.message });
+  } finally {
+    cliente.release();
+  }
+});
+
+// Catalogos
+aplicacion.get('/api/materiales_cristal', async (peticion, respuesta) => {
+  try {
+    const { rows } = await conexionBd.query('SELECT * FROM materiales_cristal ORDER BY nombre ASC');
+    respuesta.json(rows);
+  } catch (error) {
     respuesta.status(500).json({ error: error.message });
   }
 });
 
-aplicacion.put('/api/inventario/:id', async (peticion, respuesta) => {
+aplicacion.post('/api/materiales_cristal', async (peticion, respuesta) => {
   try {
-    const { id } = peticion.params;
-    const { marca, modelo, tipo, cantidad, precio, imagen } = peticion.body;
-    const consulta = `
-      UPDATE inventario 
-      SET marca = $1, modelo = $2, tipo = $3, cantidad = $4, precio = $5, imagen = $6
-      WHERE id = $7
-      RETURNING *;
-    `;
-    const valores = [marca, modelo, tipo, cantidad, precio, imagen, id];
-    const { rows: filas } = await conexionBd.query(consulta, valores);
-    
-    if (filas.length === 0) {
-      return respuesta.status(404).json({ error: 'Producto no encontrado' });
-    }
-    
-    respuesta.json(filas[0]);
+    const { nombre, descripcion } = peticion.body;
+    const { rows } = await conexionBd.query('INSERT INTO materiales_cristal (nombre, descripcion) VALUES ($1, $2) RETURNING *', [nombre, descripcion]);
+    respuesta.status(201).json(rows[0]);
   } catch (error) {
-    console.error('❌ Error actualizando inventario:', error.message);
+    respuesta.status(500).json({ error: error.message });
+  }
+});
+
+aplicacion.get('/api/tratamientos_cristal', async (peticion, respuesta) => {
+  try {
+    const { rows } = await conexionBd.query('SELECT * FROM tratamientos_cristal ORDER BY nombre ASC');
+    respuesta.json(rows);
+  } catch (error) {
+    respuesta.status(500).json({ error: error.message });
+  }
+});
+
+aplicacion.post('/api/tratamientos_cristal', async (peticion, respuesta) => {
+  try {
+    const { nombre, descripcion, costo_adicional } = peticion.body;
+    const { rows } = await conexionBd.query('INSERT INTO tratamientos_cristal (nombre, descripcion, costo_adicional) VALUES ($1, $2, $3) RETURNING *', [nombre, descripcion, costo_adicional || 0]);
+    respuesta.status(201).json(rows[0]);
+  } catch (error) {
     respuesta.status(500).json({ error: error.message });
   }
 });
@@ -230,13 +361,13 @@ aplicacion.get('/api/ventas', async (peticion, respuesta) => {
 
 aplicacion.post('/api/ventas', async (peticion, respuesta) => {
   try {
-    const { id, pacienteId, productos, detallesLentes, subtotalCarrito, total, adelanto, saldoPendiente, estadoPago, lentesTerminados, motivoNoTerminado, examenId, consultaTxt, fecha } = peticion.body;
+    const { id, pacienteId, productos, detallesLentes, subtotalCarrito, total, adelanto, saldoPendiente, estadoPago, lentesTerminados, motivoNoTerminado, examenId, consultaTxt, fecha, graduacion } = peticion.body;
     const consulta = `
-      INSERT INTO ventas (id, pacienteId, productos, detallesLentes, subtotalCarrito, total, adelanto, saldoPendiente, estadoPago, lentesTerminados, motivoNoTerminado, examenId, consulta, fecha) 
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) 
+      INSERT INTO ventas (id, pacienteId, productos, detallesLentes, subtotalCarrito, total, adelanto, saldoPendiente, estadoPago, lentesTerminados, motivoNoTerminado, examenId, consulta, fecha, graduacion) 
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) 
       RETURNING *;
     `;
-    const valores = [id, pacienteId, JSON.stringify(productos), JSON.stringify(detallesLentes), subtotalCarrito, total, adelanto, saldoPendiente, estadoPago, lentesTerminados, motivoNoTerminado, examenId, consultaTxt, fecha];
+    const valores = [id, pacienteId, JSON.stringify(productos), JSON.stringify(detallesLentes), subtotalCarrito, total, adelanto, saldoPendiente, estadoPago, lentesTerminados, motivoNoTerminado, examenId, consultaTxt, fecha, graduacion];
     const { rows: filas } = await conexionBd.query(consulta, valores);
     respuesta.status(201).json(filas[0]);
   } catch (error) {
@@ -398,13 +529,47 @@ aplicacion.post('/api/pedidos/enviar-correo-confirmacion', async (peticion, resp
       return respuesta.status(400).json({ error: 'No se proporcionó un correo electrónico de destino.' });
     }
 
-    const itemsHtml = (productos || []).map(prod => `
-      <tr>
-        <td style="padding: 8px; border-bottom: 1px solid #ddd;">${prod.marca || ''} ${prod.modelo || ''} (${prod.tipo || 'Producto'})</td>
-        <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: center;">${prod.cantidadVenta || prod.cantidad || 1}</td>
-        <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">$${(Number(prod.precio) || 0).toFixed(2)}</td>
-      </tr>
-    `).join('');
+    const itemsHtml = (productos || []).map(item => {
+      if (item.isPaquete) {
+        const p = item.principal;
+        const cant = Number(item.cantidadVenta || 1);
+        const precio = Number(item.precio || 0);
+        let recetaHtml = '';
+        if (item.receta && item.receta.nombre) {
+          recetaHtml += `<div style="font-size: 12px; color: #1e293b; margin-top: 4px;"><strong>👤 Para:</strong> ${item.receta.nombre}</div>`;
+          if (JSON.stringify(item.receta.od) === JSON.stringify(item.receta.oi)) {
+            recetaHtml += `<div style="font-size: 11px; color: #64748b;">Ambos Ojos: Esf ${item.receta.od?.esfera} Cil ${item.receta.od?.cilindro} Eje ${item.receta.od?.eje}</div>`;
+          } else {
+            recetaHtml += `<div style="font-size: 11px; color: #64748b;">OD: Esf ${item.receta.od?.esfera} Cil ${item.receta.od?.cilindro} Eje ${item.receta.od?.eje}</div>`;
+            recetaHtml += `<div style="font-size: 11px; color: #64748b;">OS: Esf ${item.receta.oi?.esfera} Cil ${item.receta.oi?.cilindro} Eje ${item.receta.oi?.eje}</div>`;
+          }
+        }
+        let specsHtml = '';
+        if (item.material) specsHtml += `<li style="font-size: 11px; color: #64748b;">Mat: ${item.material.nombre}</li>`;
+        if (item.tratamientos) item.tratamientos.forEach(t => specsHtml += `<li style="font-size: 11px; color: #64748b;">Trat: ${t.nombre}</li>`);
+        if (item.graduacion !== 'Ninguna') specsHtml += `<li style="font-size: 11px; color: #64748b;">Grad: ${item.graduacion}</li>`;
+
+        return `
+        <tr>
+          <td style="padding: 8px; border-bottom: 1px solid #ddd;">
+            <div style="font-weight: bold;">[PAQUETE] ${p?.marca || ''} ${p?.modelo || ''}</div>
+            ${recetaHtml}
+            ${specsHtml ? `<ul style="margin: 4px 0 0 0; padding-left: 15px;">${specsHtml}</ul>` : ''}
+          </td>
+          <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: center; vertical-align: top;">${cant}</td>
+          <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right; vertical-align: top;">$${precio.toFixed(2)}</td>
+        </tr>`;
+      } else {
+        const cant = Number(item.cantidadVenta || item.cantidad || 1);
+        const precio = Number(item.precio || item.precio_unitario || 0);
+        return `
+        <tr>
+          <td style="padding: 8px; border-bottom: 1px solid #ddd; vertical-align: top;">${item.marca || ''} ${item.modelo || ''} (${item.tipo || 'Producto'})</td>
+          <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: center; vertical-align: top;">${cant}</td>
+          <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right; vertical-align: top;">$${precio.toFixed(2)}</td>
+        </tr>`;
+      }
+    }).join('');
 
     const htmlContent = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
