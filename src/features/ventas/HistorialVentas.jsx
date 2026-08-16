@@ -1,9 +1,13 @@
 import React, { useMemo, useState } from 'react';
 import { useDatabase } from '../../context/DatabaseContext';
 import { formatCurrency, getPendingSales } from '../../utils/metrics';
+import { CreditCard, CheckCircle, X } from 'lucide-react';
 
 const HistorialVentas = () => {
-  const { ventas = [], pacientes = [], actualizarPagoVenta } = useDatabase();
+  const { 
+    ventas = [], pacientes = [], actualizarPagoVenta, cambiarEstadoVenta,
+    crearOrdenMercadoPago, simularEventoMercadoPago, obtenerOrdenMercadoPago
+  } = useDatabase();
   
   const [fechaInicio, setFechaInicio] = useState('');
   const [fechaFin, setFechaFin] = useState('');
@@ -11,6 +15,15 @@ const HistorialVentas = () => {
   const [ventaExpandida, setVentaExpandida] = useState(null);
   const [montoAbono, setMontoAbono] = useState('');
   const [filtroEstado, setFiltroEstado] = useState('Todos');
+
+  // --- Estados Modal Mercado Pago Abono ---
+  const [modalMpAbono, setModalMpAbono] = useState(false);
+  const [ventaAbonoActual, setVentaAbonoActual] = useState(null);
+  const [montoAbonoMp, setMontoAbonoMp] = useState(0);
+  const [mpOrdenActual, setMpOrdenActual] = useState(null);
+  const [mpCargando, setMpCargando] = useState(false);
+  const [mpStatusInfo, setMpStatusInfo] = useState('');
+  const [mpLogs, setMpLogs] = useState([]);
 
   const ventasFiltradas = useMemo(() => {
     return (ventas || []).filter((venta) => {
@@ -41,6 +54,229 @@ const HistorialVentas = () => {
     }
     actualizarPagoVenta(venta.id, abono);
     setMontoAbono('');
+  };
+
+  // --- Handlers Mercado Pago para Abonos ---
+  const handleIniciarAbonoMP = (venta) => {
+    const abono = parseFloat(montoAbono);
+    if (!abono || abono <= 0) return alert('Ingresa un monto de abono válido.');
+    if (abono > Number(venta.saldoPendiente || 0)) {
+      return alert('El abono no puede superar el saldo pendiente.');
+    }
+    setVentaAbonoActual(venta);
+    setMontoAbonoMp(abono);
+    setModalMpAbono(true);
+    setMpOrdenActual(null);
+    setMpLogs([]);
+    setMpStatusInfo('Terminal Virtual Lista para cobrar el abono.');
+  };
+
+  const handleCrearOrdenAbonoMP = async () => {
+    try {
+      setMpCargando(true);
+      setMpStatusInfo(`Creando orden de abono en Mercado Pago por $${montoAbonoMp}...`);
+      const extRef = `ABONO-${ventaAbonoActual.id}-${Date.now()}`;
+      const data = await crearOrdenMercadoPago({
+        external_reference: extRef,
+        description: `Abono Venta #${ventaAbonoActual.id} ($${montoAbonoMp} MXN)`,
+        total_amount: montoAbonoMp
+      });
+      setMpOrdenActual(data);
+      setMpStatusInfo(`Orden de abono creada por $${montoAbonoMp} MXN. ID: ${data.id || extRef}`);
+      setMpLogs(prev => [`[${new Date().toLocaleTimeString()}] ✅ Orden Abono Creada: ${JSON.stringify(data, null, 2)}`, ...prev]);
+    } catch (err) {
+      setMpStatusInfo(`❌ Error creando orden de abono: ${err.message}`);
+      setMpLogs(prev => [`[${new Date().toLocaleTimeString()}] ❌ Error: ${err.message}`, ...prev]);
+    } finally {
+      setMpCargando(false);
+    }
+  };
+
+  const handleSimularEventoAbonoMP = async () => {
+    if (!mpOrdenActual?.id) return alert('Debes crear la orden de abono primero');
+    try {
+      setMpCargando(true);
+      setMpStatusInfo('Simulando cobro de abono en Terminal Virtual...');
+      const data = await simularEventoMercadoPago({
+        order_id: mpOrdenActual.id,
+        status: 'processed',
+        payment_method_type: 'credit_card',
+        installments: 1,
+        payment_method_id: 'visa',
+        status_detail: 'accredited'
+      });
+      setMpStatusInfo('✅ Abono Acreditado exitosamente en Mercado Pago');
+      setMpLogs(prev => [`[${new Date().toLocaleTimeString()}] 💳 Abono Simulado: ${JSON.stringify(data, null, 2)}`, ...prev]);
+      
+      await handleObtenerOrdenAbonoMP(mpOrdenActual.id);
+    } catch (err) {
+      setMpStatusInfo(`❌ Error simulando abono: ${err.message}`);
+      setMpLogs(prev => [`[${new Date().toLocaleTimeString()}] ❌ Error: ${err.message}`, ...prev]);
+    } finally {
+      setMpCargando(false);
+    }
+  };
+
+  const handleObtenerOrdenAbonoMP = async (targetId) => {
+    const idOrder = targetId || mpOrdenActual?.id;
+    if (!idOrder) return;
+    try {
+      setMpCargando(true);
+      const data = await obtenerOrdenMercadoPago(idOrder);
+      setMpOrdenActual(data);
+      const est = data.status || data.data?.status || 'PROCESSED';
+      setMpStatusInfo(`Estatus de la orden: ${est.toUpperCase()}`);
+      setMpLogs(prev => [`[${new Date().toLocaleTimeString()}] 🔍 Estatus Orden Abono: ${JSON.stringify(data, null, 2)}`, ...prev]);
+    } catch (err) {
+      setMpStatusInfo(`❌ Error consultando orden: ${err.message}`);
+    } finally {
+      setMpCargando(false);
+    }
+  };
+
+  const handleSimularFallaAbonoMP = async (detail = 'insufficient_amount') => {
+    if (!mpOrdenActual?.id) return alert('Debes crear la orden de abono primero');
+    try {
+      setMpCargando(true);
+      setMpStatusInfo(`Simulando FALLA DE PAGO DE ABONO (${detail})...`);
+      const data = await simularEventoMercadoPago({
+        order_id: mpOrdenActual.id,
+        status: 'failed',
+        payment_method_type: 'credit_card',
+        installments: 1,
+        payment_method_id: 'visa',
+        status_detail: detail
+      });
+      setMpStatusInfo(`❌ RECHAZO DE ABONO: Estado ${data.status || 'failed'} (${detail})`);
+      setMpLogs(prev => [`[${new Date().toLocaleTimeString()}] ❌ Falla Abono Simulada (${detail}): ${JSON.stringify(data, null, 2)}`, ...prev]);
+      
+      await handleObtenerOrdenAbonoMP(mpOrdenActual.id);
+    } catch (err) {
+      setMpStatusInfo(`❌ Error simulando falla: ${err.message}`);
+      setMpLogs(prev => [`[${new Date().toLocaleTimeString()}] ❌ Error Falla: ${err.message}`, ...prev]);
+    } finally {
+      setMpCargando(false);
+    }
+  };
+
+  const handleSimularReembolsoAbonoMP = async () => {
+    if (!mpOrdenActual?.id) return alert('Debes crear la orden de abono primero');
+    try {
+      setMpCargando(true);
+      setMpStatusInfo('Simulando REEMBOLSO DE ABONO en Mercado Pago...');
+      const data = await simularEventoMercadoPago({
+        order_id: mpOrdenActual.id,
+        status: 'refunded'
+      });
+      setMpStatusInfo('🔄 SIMULACIÓN DE REEMBOLSO DE ABONO: Estado REFUNDED');
+      setMpLogs(prev => [`[${new Date().toLocaleTimeString()}] 🔄 Reembolso Simulado: ${JSON.stringify(data, null, 2)}`, ...prev]);
+      await handleObtenerOrdenAbonoMP(mpOrdenActual.id);
+    } catch (err) {
+      setMpStatusInfo(`❌ Error simulando reembolso: ${err.message}`);
+    } finally {
+      setMpCargando(false);
+    }
+  };
+
+  const handleSimularCancelacionAbonoMP = async () => {
+    if (!mpOrdenActual?.id) return alert('Debes crear la orden de abono primero');
+    try {
+      setMpCargando(true);
+      setMpStatusInfo('Simulando CANCELACIÓN DE ABONO en Mercado Pago...');
+      const data = await simularEventoMercadoPago({
+        order_id: mpOrdenActual.id,
+        status: 'canceled'
+      });
+      setMpStatusInfo('🚫 SIMULACIÓN DE CANCELACIÓN DE ABONO: Estado CANCELED');
+      setMpLogs(prev => [`[${new Date().toLocaleTimeString()}] 🚫 Cancelación Simulada: ${JSON.stringify(data, null, 2)}`, ...prev]);
+      await handleObtenerOrdenAbonoMP(mpOrdenActual.id);
+    } catch (err) {
+      setMpStatusInfo(`❌ Error simulando cancelación: ${err.message}`);
+    } finally {
+      setMpCargando(false);
+    }
+  };
+
+  const handleSimularExpiracionAbonoMP = async () => {
+    if (!mpOrdenActual?.id) return alert('Debes crear la orden de abono primero');
+    try {
+      setMpCargando(true);
+      setMpStatusInfo('Simulando EXPIRACIÓN DE ABONO en Mercado Pago...');
+      const data = await simularEventoMercadoPago({
+        order_id: mpOrdenActual.id,
+        status: 'expired'
+      });
+      setMpStatusInfo('⏳ SIMULACIÓN DE EXPIRACIÓN: Estado EXPIRED');
+      setMpLogs(prev => [`[${new Date().toLocaleTimeString()}] ⏳ Expiración Simulada: ${JSON.stringify(data, null, 2)}`, ...prev]);
+      await handleObtenerOrdenAbonoMP(mpOrdenActual.id);
+    } catch (err) {
+      setMpStatusInfo(`❌ Error simulando expiración: ${err.message}`);
+    } finally {
+      setMpCargando(false);
+    }
+  };
+
+  const handleSimularAccionRequeridaAbonoMP = async () => {
+    if (!mpOrdenActual?.id) return alert('Debes crear la orden de abono primero');
+    try {
+      setMpCargando(true);
+      setMpStatusInfo('Simulando ACCIÓN REQUERIDA EN ABONO...');
+      const data = await simularEventoMercadoPago({
+        order_id: mpOrdenActual.id,
+        status: 'action_required'
+      });
+      setMpStatusInfo('📱 SIMULACIÓN DE ACCIÓN REQUERIDA: Estado ACTION_REQUIRED');
+      setMpLogs(prev => [`[${new Date().toLocaleTimeString()}] 📱 Acción Requerida Simulada: ${JSON.stringify(data, null, 2)}`, ...prev]);
+      await handleObtenerOrdenAbonoMP(mpOrdenActual.id);
+    } catch (err) {
+      setMpStatusInfo(`❌ Error simulando acción requerida: ${err.message}`);
+    } finally {
+      setMpCargando(false);
+    }
+  };
+
+  const handleReembolsarVenta = async (venta) => {
+    if (!window.confirm(`¿Estás seguro de solicitar el reembolso completo para la venta #${venta.id} en Mercado Pago?`)) {
+      return;
+    }
+    const orderIdMp = venta.detallesLentes?.mercadoPago?.id;
+    if (orderIdMp) {
+      try {
+        await simularEventoMercadoPago({ order_id: orderIdMp, status: 'refunded' });
+      } catch (e) {
+        console.warn('Simulación reembolso MP:', e.message);
+      }
+    }
+    await cambiarEstadoVenta(venta.id, 'Reembolsado');
+    alert(`✅ Venta #${venta.id} marcada como Reembolsada correctamente.`);
+  };
+
+  const handleConfirmarAbonoEnSistema = async () => {
+    const est = (mpOrdenActual?.status || mpOrdenActual?.data?.status || '').toLowerCase();
+    if (est === 'failed' || est === 'rejected') {
+      return alert('❌ No se puede aplicar el abono porque el cobro con Mercado Pago fue RECHAZADO / FALLIDO.');
+    }
+    if (est === 'canceled' || est === 'refunded') {
+      return alert(`❌ No se puede aplicar el abono porque la orden está ${est.toUpperCase()} (Cancelada/Reembolsada).`);
+    }
+    if (est === 'expired') {
+      return alert('⏳ No se puede aplicar el abono porque la orden EXPIRÓ.');
+    }
+    if (est === 'action_required') {
+      return alert('📱 No se puede aplicar el abono aún. Se requiere acción en la terminal.');
+    }
+    if (!mpOrdenActual?.id) {
+      if (!window.confirm('⚠️ Aún no has creado la orden de abono en Mercado Pago. ¿Deseas aplicar el abono de todas formas?')) {
+        return;
+      }
+    }
+    if (ventaAbonoActual && montoAbonoMp > 0) {
+      await actualizarPagoVenta(ventaAbonoActual.id, montoAbonoMp);
+      alert(`✅ Abono de $${montoAbonoMp} MXN registrado correctamente en la venta #${ventaAbonoActual.id}.`);
+      setModalMpAbono(false);
+      setMontoAbono('');
+      setVentaAbonoActual(null);
+    }
   };
 
   return (
@@ -192,8 +428,8 @@ const HistorialVentas = () => {
 
                             {venta.estadoPago === 'Pendiente' && (
                               <div style={{ marginTop: '1.5rem', borderTop: '1px dashed #cbd5e1', paddingTop: '1rem' }}>
-                                <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '0.25rem', fontWeight: 'bold' }}>Registrar Nuevo Abono</label>
-                                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '0.5rem', fontWeight: 'bold' }}>Registrar Nuevo Abono</label>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                                   <input 
                                     type="number" 
                                     step="0.01" 
@@ -202,12 +438,34 @@ const HistorialVentas = () => {
                                     value={montoAbono} 
                                     onChange={e => setMontoAbono(e.target.value)} 
                                     placeholder={`Max: $${Number(venta.saldoPendiente || 0).toFixed(2)}`}
-                                    style={{ flex: 1, padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1' }}
+                                    style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.9rem' }}
                                   />
-                                  <button onClick={() => handleAbonar(venta)} style={{ padding: '0.5rem 1rem', backgroundColor: '#10b981', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
-                                    Abonar
-                                  </button>
+                                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                    <button 
+                                      onClick={() => handleAbonar(venta)} 
+                                      style={{ flex: 1, padding: '0.5rem 0.75rem', backgroundColor: '#10b981', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.82rem' }}
+                                    >
+                                      Abonar (Efectivo)
+                                    </button>
+                                    <button 
+                                      onClick={() => handleIniciarAbonoMP(venta)} 
+                                      style={{ flex: 1, padding: '0.5rem 0.75rem', backgroundColor: '#009ee3', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.82rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem' }}
+                                    >
+                                      <CreditCard size={15} /> Mercado Pago
+                                    </button>
+                                  </div>
                                 </div>
+                              </div>
+                            )}
+
+                            {venta.estadoPago !== 'Reembolsado' && (
+                              <div style={{ marginTop: '1.25rem', borderTop: '1px solid #cbd5e1', paddingTop: '0.75rem' }}>
+                                <button
+                                  onClick={() => handleReembolsarVenta(venta)}
+                                  style={{ width: '100%', padding: '0.5rem', backgroundColor: '#f59e0b', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.82rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem' }}
+                                >
+                                  <CreditCard size={15} /> Solicitar Reembolso (Mercado Pago)
+                                </button>
                               </div>
                             )}
                           </div>
@@ -226,6 +484,136 @@ const HistorialVentas = () => {
           </tbody>
         </table>
       </div>
+      {modalMpAbono && ventaAbonoActual && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+          <div style={{ backgroundColor: 'white', borderRadius: '16px', width: '750px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', overflow: 'hidden' }}>
+            
+            {/* Header Modal MP Abono */}
+            <div style={{ padding: '1.25rem 1.5rem', backgroundColor: '#009ee3', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{ backgroundColor: 'white', padding: '0.4rem 0.6rem', borderRadius: '8px', fontWeight: 'bold', color: '#009ee3', fontSize: '0.9rem' }}>
+                  Mercado Pago
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.15rem', color: 'white' }}>Cobro de Abono a Venta #{ventaAbonoActual.id}</h3>
+                  <p style={{ margin: '0.1rem 0 0 0', fontSize: '0.8rem', opacity: 0.9 }}>Terminal Virtual & Simulación de Pago Presencial</p>
+                </div>
+              </div>
+              <button onClick={() => setModalMpAbono(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'white' }}><X size={24} /></button>
+            </div>
+
+            {/* Content Body */}
+            <div style={{ padding: '1.5rem', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              
+              {/* Desglose de Abono y Saldo */}
+              <div style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '1rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#64748b', marginBottom: '0.25rem' }}>
+                  <span>Total Venta Original:</span>
+                  <span>$ {Number(ventaAbonoActual.total || 0).toLocaleString()} MXN</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#166534', marginBottom: '0.25rem' }}>
+                  <span>Abonos Previos Registrados:</span>
+                  <span>$ {Number(ventaAbonoActual.adelanto || 0).toLocaleString()} MXN</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#ef4444', fontWeight: 'bold', marginBottom: '0.5rem' }}>
+                  <span>Saldo Pendiente Actual:</span>
+                  <span>$ {Number(ventaAbonoActual.saldoPendiente || 0).toLocaleString()} MXN</span>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #cbd5e1', paddingTop: '0.5rem', marginTop: '0.5rem' }}>
+                  <span style={{ fontSize: '0.95rem', fontWeight: 'bold', color: '#0369a1' }}>Monto de Abono a cobrar con Mercado Pago:</span>
+                  <span style={{ fontSize: '1.3rem', fontWeight: '900', color: '#009ee3' }}>$ {Number(montoAbonoMp).toLocaleString()} MXN</span>
+                </div>
+
+                <div style={{ marginTop: '0.5rem', fontSize: '0.82rem', color: '#334155' }}>
+                  <strong>ID Orden MP:</strong> {mpOrdenActual?.id || mpOrdenActual?.external_reference || 'Pendiente de crear'}<br/>
+                  <strong>Estatus actual:</strong> <span style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', backgroundColor: (mpOrdenActual?.status === 'processed' || mpOrdenActual?.data?.status === 'processed') ? '#dcfce7' : '#fef3c7', color: (mpOrdenActual?.status === 'processed' || mpOrdenActual?.data?.status === 'processed') ? '#166534' : '#92400e', fontWeight: 'bold', fontSize: '0.8rem' }}>{(mpOrdenActual?.status || mpOrdenActual?.data?.status || 'SIN_ORDEN').toUpperCase()}</span>
+                </div>
+
+                {mpStatusInfo && (
+                  <div style={{ marginTop: '0.75rem', fontSize: '0.85rem', color: '#1e293b', fontWeight: 'bold', backgroundColor: '#e0f2fe', padding: '0.5rem 0.75rem', borderRadius: '6px', borderLeft: '4px solid #0284c7' }}>
+                    {mpStatusInfo}
+                  </div>
+                )}
+              </div>
+
+              {/* Botones de Acción Mercado Pago */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.4rem' }}>
+                <button
+                  onClick={handleCrearOrdenAbonoMP} disabled={mpCargando}
+                  style={{ backgroundColor: '#009ee3', color: 'white', border: 'none', borderRadius: '8px', padding: '0.55rem 0.35rem', fontWeight: 'bold', fontSize: '0.75rem', cursor: mpCargando ? 'not-allowed' : 'pointer', opacity: mpCargando ? 0.7 : 1 }}
+                >
+                  1. Crear Orden
+                </button>
+                <button
+                  onClick={handleSimularEventoAbonoMP} disabled={mpCargando || !mpOrdenActual?.id}
+                  style={{ backgroundColor: mpOrdenActual?.id ? '#10b981' : '#94a3b8', color: 'white', border: 'none', borderRadius: '8px', padding: '0.55rem 0.35rem', fontWeight: 'bold', fontSize: '0.75rem', cursor: (!mpOrdenActual?.id || mpCargando) ? 'not-allowed' : 'pointer' }}
+                >
+                  2a. Éxito
+                </button>
+                <button
+                  onClick={() => handleSimularFallaAbonoMP('insufficient_amount')} disabled={mpCargando || !mpOrdenActual?.id}
+                  style={{ backgroundColor: mpOrdenActual?.id ? '#ef4444' : '#94a3b8', color: 'white', border: 'none', borderRadius: '8px', padding: '0.55rem 0.35rem', fontWeight: 'bold', fontSize: '0.75rem', cursor: (!mpOrdenActual?.id || mpCargando) ? 'not-allowed' : 'pointer' }}
+                >
+                  2b. Falla
+                </button>
+                <button
+                  onClick={handleSimularReembolsoAbonoMP} disabled={mpCargando || !mpOrdenActual?.id}
+                  style={{ backgroundColor: mpOrdenActual?.id ? '#f59e0b' : '#94a3b8', color: 'white', border: 'none', borderRadius: '8px', padding: '0.55rem 0.35rem', fontWeight: 'bold', fontSize: '0.75rem', cursor: (!mpOrdenActual?.id || mpCargando) ? 'not-allowed' : 'pointer' }}
+                >
+                  2c. Reembolso
+                </button>
+                <button
+                  onClick={handleSimularCancelacionAbonoMP} disabled={mpCargando || !mpOrdenActual?.id}
+                  style={{ backgroundColor: mpOrdenActual?.id ? '#64748b' : '#94a3b8', color: 'white', border: 'none', borderRadius: '8px', padding: '0.55rem 0.35rem', fontWeight: 'bold', fontSize: '0.75rem', cursor: (!mpOrdenActual?.id || mpCargando) ? 'not-allowed' : 'pointer' }}
+                >
+                  2d. Cancelar
+                </button>
+                <button
+                  onClick={handleSimularExpiracionAbonoMP} disabled={mpCargando || !mpOrdenActual?.id}
+                  style={{ backgroundColor: mpOrdenActual?.id ? '#ea580c' : '#94a3b8', color: 'white', border: 'none', borderRadius: '8px', padding: '0.55rem 0.35rem', fontWeight: 'bold', fontSize: '0.75rem', cursor: (!mpOrdenActual?.id || mpCargando) ? 'not-allowed' : 'pointer' }}
+                >
+                  2e. Expirar
+                </button>
+                <button
+                  onClick={handleSimularAccionRequeridaAbonoMP} disabled={mpCargando || !mpOrdenActual?.id}
+                  style={{ backgroundColor: mpOrdenActual?.id ? '#0284c7' : '#94a3b8', color: 'white', border: 'none', borderRadius: '8px', padding: '0.55rem 0.35rem', fontWeight: 'bold', fontSize: '0.75rem', cursor: (!mpOrdenActual?.id || mpCargando) ? 'not-allowed' : 'pointer' }}
+                >
+                  2f. Acción Req.
+                </button>
+                <button
+                  onClick={() => handleObtenerOrdenAbonoMP()} disabled={mpCargando || !mpOrdenActual?.id}
+                  style={{ backgroundColor: '#6366f1', color: 'white', border: 'none', borderRadius: '8px', padding: '0.55rem 0.35rem', fontWeight: 'bold', fontSize: '0.75rem', cursor: (!mpOrdenActual?.id || mpCargando) ? 'not-allowed' : 'pointer' }}
+                >
+                  3. Consultar Estado
+                </button>
+              </div>
+
+              {/* Terminal Logs */}
+              <div>
+                <h4 style={{ margin: '0 0 0.4rem 0', fontSize: '0.85rem', color: '#64748b' }}>Log de Peticiones API Mercado Pago:</h4>
+                <div style={{ backgroundColor: '#0f172a', color: '#38bdf8', padding: '0.75rem', borderRadius: '8px', fontFamily: 'monospace', fontSize: '0.78rem', maxHeight: '160px', overflowY: 'auto', whiteSpace: 'pre-wrap' }}>
+                  {mpLogs.length === 0 ? '// Presiona "Crear Orden Abono" para iniciar el cobro' : mpLogs.join('\n\n')}
+                </div>
+              </div>
+            </div>
+
+            {/* Footer Modal */}
+            <div style={{ padding: '1rem 1.5rem', borderTop: '1px solid #e2e8f0', backgroundColor: '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <button onClick={() => setModalMpAbono(false)} style={{ backgroundColor: 'transparent', border: 'none', color: '#64748b', fontWeight: 'bold', cursor: 'pointer' }}>
+                Cancelar
+              </button>
+              <button
+                onClick={handleConfirmarAbonoEnSistema}
+                style={{ backgroundColor: '#16a34a', color: 'white', padding: '0.75rem 1.5rem', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+              >
+                <CheckCircle size={18} /> Confirmar y Aplicar Abono en Óptica
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

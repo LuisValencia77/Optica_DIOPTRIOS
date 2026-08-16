@@ -421,11 +421,99 @@ export const DatabaseProvider = ({ children }) => {
       return true;
     } catch (error) {
       console.error('❌ Error eliminando examen:', error);
-      alert('Error: ' + error.message);
       return false;
     }
   };
-  const actualizarPagoVenta = async () => { console.warn('Endpoint PATCH no implementado en backend'); };
+
+  const actualizarPagoVenta = async (ventaId, montoAbono) => {
+    try {
+      const res = await fetch(`${API_BASE}/ventas/${ventaId}/abono`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ abono: montoAbono })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error registrando abono');
+      
+      setVentas(prev => prev.map(v => String(v.id) === String(ventaId) ? {
+        ...v,
+        adelanto: Number(data.adelanto),
+        saldoPendiente: Number(data.saldopendiente !== undefined ? data.saldopendiente : data.saldoPendiente),
+        estadoPago: data.estadopago || data.estadoPago
+      } : v));
+      return data;
+    } catch (error) {
+      console.error('❌ Error actualizando abono de venta:', error);
+      alert('Error al registrar abono: ' + error.message);
+      return null;
+    }
+  };
+
+  const crearOrdenMercadoPago = async (datosOrden) => {
+    try {
+      const res = await fetch(`${API_BASE}/mercadopago/crear-orden`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(datosOrden)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || data.message || 'Error al crear orden en Mercado Pago');
+      return data;
+    } catch (error) {
+      console.error('❌ Error en crearOrdenMercadoPago:', error);
+      throw error;
+    }
+  };
+
+  const simularEventoMercadoPago = async (datosEvento) => {
+    try {
+      const res = await fetch(`${API_BASE}/mercadopago/simular-evento`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(datosEvento)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || data.message || 'Error al simular evento en Mercado Pago');
+      return data;
+    } catch (error) {
+      console.error('❌ Error en simularEventoMercadoPago:', error);
+      throw error;
+    }
+  };
+
+  const obtenerOrdenMercadoPago = async (orderId) => {
+    try {
+      const res = await fetch(`${API_BASE}/mercadopago/obtener-orden/${encodeURIComponent(orderId)}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || data.message || 'Error al obtener orden de Mercado Pago');
+      return data;
+    } catch (error) {
+      console.error('❌ Error en obtenerOrdenMercadoPago:', error);
+      throw error;
+    }
+  };
+
+  const cambiarEstadoVenta = async (ventaId, nuevoEstado) => {
+    try {
+      const res = await fetch(`${API_BASE}/ventas/${ventaId}/estado`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ estadoPago: nuevoEstado })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error cambiando estado de venta');
+
+      setVentas(prev => prev.map(v => String(v.id) === String(ventaId) ? {
+        ...v,
+        estadoPago: data.estadopago || data.estadoPago
+      } : v));
+      return data;
+    } catch (error) {
+      console.error('❌ Error cambiando estado de venta:', error);
+      alert('Error: ' + error.message);
+      return null;
+    }
+  };
 
   return (
     <DatabaseContext.Provider value={{
@@ -451,9 +539,13 @@ export const DatabaseProvider = ({ children }) => {
       eliminarExamen,
       registrarVenta,
       actualizarPagoVenta,
+      cambiarEstadoVenta,
       actualizarEstadoPedido,
       enviarCorreoConfirmacionPedido,
       notificarPedidoListo,
+      crearOrdenMercadoPago,
+      simularEventoMercadoPago,
+      obtenerOrdenMercadoPago,
     }}>
       {children}
     </DatabaseContext.Provider>

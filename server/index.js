@@ -670,6 +670,196 @@ aplicacion.post('/api/pedidos/notificar-listo', async (peticion, respuesta) => {
   }
 });
 
+// Registrar abono a venta pendiente
+aplicacion.patch('/api/ventas/:id/abono', async (peticion, respuesta) => {
+  try {
+    const { id } = peticion.params;
+    const { abono } = peticion.body;
+    const montoAbono = parseFloat(abono) || 0;
+
+    if (montoAbono <= 0) {
+      return respuesta.status(400).json({ error: 'Monto de abono inválido' });
+    }
+
+    const { rows } = await conexionBd.query('SELECT * FROM ventas WHERE id = $1', [id]);
+    if (rows.length === 0) {
+      return respuesta.status(404).json({ error: 'Venta no encontrada' });
+    }
+
+    const venta = rows[0];
+    const total = parseFloat(venta.total || 0);
+    const adelantoActual = parseFloat(venta.adelanto || 0);
+    const nuevoAdelanto = adelantoActual + montoAbono;
+    const nuevoSaldoPendiente = Math.max(0, total - nuevoAdelanto);
+    const nuevoEstado = nuevoSaldoPendiente <= 0 ? 'Pagado' : 'Pendiente';
+
+    const updateQuery = `
+      UPDATE ventas
+      SET adelanto = $1, saldoPendiente = $2, estadoPago = $3
+      WHERE id = $4
+      RETURNING *;
+    `;
+    const { rows: updatedRows } = await conexionBd.query(updateQuery, [nuevoAdelanto, nuevoSaldoPendiente, nuevoEstado, id]);
+
+    respuesta.json(updatedRows[0]);
+  } catch (error) {
+    console.error('❌ Error registrando abono:', error);
+    respuesta.status(500).json({ error: error.message });
+  }
+});
+
+// Cambiar estado de pago de una venta (Reembolsado, Cancelado, etc.)
+aplicacion.patch('/api/ventas/:id/estado', async (peticion, respuesta) => {
+  try {
+    const { id } = peticion.params;
+    const { estadoPago } = peticion.body;
+
+    if (!estadoPago) {
+      return respuesta.status(400).json({ error: 'Se requiere estadoPago' });
+    }
+
+    const updateQuery = `
+      UPDATE ventas
+      SET estadoPago = $1
+      WHERE id = $2
+      RETURNING *;
+    `;
+    const { rows: updatedRows } = await conexionBd.query(updateQuery, [estadoPago, id]);
+    if (updatedRows.length === 0) {
+      return respuesta.status(404).json({ error: 'Venta no encontrada' });
+    }
+
+    respuesta.json(updatedRows[0]);
+  } catch (error) {
+    console.error('❌ Error cambiando estado de venta:', error);
+    respuesta.status(500).json({ error: error.message });
+  }
+});
+
+// --- RUTAS MERCADO PAGO INTEGRACION PRESENCIAL / ORDERS ---
+aplicacion.post('/api/mercadopago/crear-orden', async (peticion, respuesta) => {
+  try {
+    const token = process.env.MERCADOPAGO_ACCESS_TOKEN;
+    if (!token) {
+      return respuesta.status(500).json({ error: 'MERCADOPAGO_ACCESS_TOKEN no configurado en .env' });
+    }
+
+    const { external_reference, description, total_amount } = peticion.body;
+    
+    const extRef = external_reference || `ext-${Date.now()}`;
+    const payload = {
+      type: 'point',
+      external_reference: extRef,
+      description: description || 'Compra de Óptica',
+      total_amount: String(total_amount || '10.00'),
+    };
+
+    const resMp = await fetch('https://api.mercadopago.com/v1/orders', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+        'X-Idempotency-Key': extRef
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const dataMp = await resMp.json();
+    if (!resMp.ok) {
+      console.error('❌ Error creando orden MP:', dataMp);
+      return respuesta.status(resMp.status).json(dataMp);
+    }
+
+    respuesta.json(dataMp);
+  } catch (error) {
+    console.error('❌ Error en /api/mercadopago/crear-orden:', error);
+    respuesta.status(500).json({ error: error.message });
+  }
+});
+
+aplicacion.post('/api/mercadopago/simular-evento', async (peticion, respuesta) => {
+  try {
+    const token = process.env.MERCADOPAGO_ACCESS_TOKEN;
+    if (!token) {
+      return respuesta.status(500).json({ error: 'MERCADOPAGO_ACCESS_TOKEN no configurado en .env' });
+    }
+
+    const { order_id, status, payment_method_type, installments, payment_method_id, status_detail } = peticion.body;
+
+    if (!order_id) {
+      return respuesta.status(400).json({ error: 'Se requiere order_id' });
+    }
+
+    let payload;
+    if (status === 'refunded') {
+      payload = { status: 'refunded' };
+    } else if (status === 'canceled') {
+      payload = { status: 'canceled' };
+    } else if (status === 'expired') {
+      payload = { status: 'expired' };
+    } else if (status === 'action_required') {
+      payload = { status: 'action_required' };
+    } else {
+      payload = {
+        status: status || 'processed',
+        payment_method_type: payment_method_type || 'credit_card',
+        installments: Number(installments) || 1,
+        payment_method_id: payment_method_id || 'visa',
+        status_detail: status_detail || 'accredited'
+      };
+    }
+
+    const resMp = await fetch(`https://api.mercadopago.com/v1/orders/${encodeURIComponent(order_id)}/events`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const dataMp = await resMp.json();
+    if (!resMp.ok) {
+      console.error('❌ Error simulando evento MP:', dataMp);
+      return respuesta.status(resMp.status).json(dataMp);
+    }
+
+    respuesta.json(dataMp);
+  } catch (error) {
+    console.error('❌ Error en /api/mercadopago/simular-evento:', error);
+    respuesta.status(500).json({ error: error.message });
+  }
+});
+
+aplicacion.get('/api/mercadopago/obtener-orden/:orderId', async (peticion, respuesta) => {
+  try {
+    const token = process.env.MERCADOPAGO_ACCESS_TOKEN;
+    if (!token) {
+      return respuesta.status(500).json({ error: 'MERCADOPAGO_ACCESS_TOKEN no configurado en .env' });
+    }
+
+    const { orderId } = peticion.params;
+
+    const resMp = await fetch(`https://api.mercadopago.com/v1/orders/${encodeURIComponent(orderId)}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    const dataMp = await resMp.json();
+    if (!resMp.ok) {
+      console.error('❌ Error obteniendo orden MP:', dataMp);
+      return respuesta.status(resMp.status).json(dataMp);
+    }
+
+    respuesta.json(dataMp);
+  } catch (error) {
+    console.error('❌ Error en /api/mercadopago/obtener-orden:', error);
+    respuesta.status(500).json({ error: error.message });
+  }
+});
+
 // Servir la página web empaquetada de React
 aplicacion.use(express.static(path.join(__dirname, '../dist')));
 aplicacion.get('*', (req, res) => {
