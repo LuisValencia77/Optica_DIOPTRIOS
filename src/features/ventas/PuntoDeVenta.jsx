@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useDatabase } from '../../context/DatabaseContext';
-import { buildReceiptText } from '../../utils/metrics';
+import { generarTicketVenta } from '../../utils/ticketGenerator';
+import ModalMercadoPago from '../../components/shared/ModalMercadoPago';
+import FormularioPaciente from '../../components/shared/FormularioPaciente';
+import FormularioExamen from '../../components/shared/FormularioExamen';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Search, User, ClipboardList, ShoppingCart, X, CheckCircle, Image as ImageIcon, Plus, ScanFace, Banknote, CreditCard, Smartphone, Eye } from 'lucide-react';
+import { Search, User, ClipboardList, ShoppingCart, X, CheckCircle, Image as ImageIcon, Plus, ScanFace, Banknote, CreditCard, Smartphone, Eye, Tag, FileText } from 'lucide-react';
 
 const PuntoDeVenta = () => {
   const { 
@@ -33,11 +36,14 @@ const PuntoDeVenta = () => {
   // --- Estados Mercado Pago Terminal Virtual ---
   const [modalMercadoPago, setModalMercadoPago] = useState(false);
   const [mpOrdenActual, setMpOrdenActual] = useState(null);
-  const [mpCargando, setMpCargando] = useState(false);
-  const [mpStatusInfo, setMpStatusInfo] = useState('');
-  const [mpLogs, setMpLogs] = useState([]);
   
   const [busquedaLista, setBusquedaLista] = useState('');
+
+  // --- Estados nuevos: búsqueda, descuento, observaciones ---
+  const [busquedaProducto, setBusquedaProducto] = useState('');
+  const [descuentoTipo, setDescuentoTipo] = useState('none'); // 'none', 'percent', 'fixed'
+  const [descuentoValor, setDescuentoValor] = useState('');
+  const [observaciones, setObservaciones] = useState('');
 
   // Formularios
   const [formPaciente, setFormPaciente] = useState({ nombre: '', apellidos: '', telefono: '', correo: '', direccion: '', fechaNacimiento: '' });
@@ -85,15 +91,31 @@ const PuntoDeVenta = () => {
   }, [examenes, pacienteId]);
 
   const productosTop = useMemo(() => {
-    return productos.filter(prod => {
+    let filtered = productos.filter(prod => {
       if (categoriaTop === 'Armazones' && prod.tipo_articulo === 'armazon') return true;
       if (categoriaTop === 'Lentes de Contacto' && prod.tipo_articulo === 'lente_contacto') return true;
       if (categoriaTop === 'Accesorios' && prod.tipo_articulo === 'accesorio') return true;
       return false;
     });
-  }, [productos, categoriaTop]);
+    if (busquedaProducto.trim()) {
+      const term = busquedaProducto.toLowerCase();
+      filtered = filtered.filter(p => 
+        `${p.marca} ${p.modelo}`.toLowerCase().includes(term) ||
+        String(p.precio_unitario).includes(term)
+      );
+    }
+    return filtered;
+  }, [productos, categoriaTop, busquedaProducto]);
 
+  const subtotalCarrito = carrito.reduce((sum, item) => sum + ((Number(item.precio) || 0) * (item.cantidadVenta || 1)), 0);
 
+  // Cálculo de descuento
+  const descuentoMonto = useMemo(() => {
+    const val = parseFloat(descuentoValor) || 0;
+    if (descuentoTipo === 'percent') return Math.min(subtotalCarrito, (subtotalCarrito * val) / 100);
+    if (descuentoTipo === 'fixed') return Math.min(subtotalCarrito, val);
+    return 0;
+  }, [descuentoTipo, descuentoValor, subtotalCarrito]);
 
   // --- Funciones Carrito ---
   const toggleTratamiento = (id) => {
@@ -167,14 +189,12 @@ const PuntoDeVenta = () => {
 
   const quitarDelCarrito = (id) => setCarrito(prev => prev.filter(item => item.id !== id));
 
-  const subtotalCarrito = carrito.reduce((sum, item) => sum + ((Number(item.precio) || 0) * (item.cantidadVenta || 1)), 0);
-  const total = subtotalCarrito;
+  const total = Math.max(0, subtotalCarrito - descuentoMonto);
 
   // --- Handlers Formularios ---
-  const handleGuardarPaciente = async (e) => {
-    e.preventDefault();
-    if (!formPaciente.nombre || !formPaciente.apellidos) return alert('Nombre y apellidos requeridos');
-    const newId = await agregarPaciente(formPaciente);
+  const handleGuardarPaciente = async (nuevoPacienteData) => {
+    if (!nuevoPacienteData.nombre || !nuevoPacienteData.apellidos) return alert('Nombre y apellidos requeridos');
+    const newId = await agregarPaciente(nuevoPacienteData);
     if (newId) {
       setPacienteId(newId.toString());
       setModalRegistroPaciente(false);
@@ -182,16 +202,15 @@ const PuntoDeVenta = () => {
     }
   };
 
-  const handleGuardarExamen = async (e) => {
-    e.preventDefault();
+  const handleGuardarExamen = async (examenData) => {
     if (!pacienteId) return alert('Seleccione un paciente primero');
     
     const exObj = {
       pacienteId,
       fecha: new Date().toISOString().split('T')[0],
-      od: formExamen.od,
-      oi: formExamen.oi,
-      tipoArmazon: formExamen.dp // Reutilizando campo para DP por simplicidad
+      od: examenData.od,
+      oi: examenData.oi,
+      tipoArmazon: examenData.dp // Reutilizando campo para DP por simplicidad
     };
     const newEx = await agregarExamen(exObj);
     if (newEx) {
@@ -395,7 +414,7 @@ const PuntoDeVenta = () => {
     setMpOrdenActual(null);
   };
 
-  const registrarVentaEnSistema = async () => {
+  const registrarVentaEnSistema = async (mpData) => {
     const pacienteObj = pacientes.find((p) => String(p.id) === String(pacienteId));
     const pacienteNombre = pacienteObj ? `${pacienteObj.nombre} ${pacienteObj.apellidos || ''}`.trim() : 'Mostrador';
     const ventaId = Date.now();
@@ -418,16 +437,18 @@ const PuntoDeVenta = () => {
       pacienteId: pacienteId ? pacienteId.toString() : null,
       examenId: examenSeleccionado ? examenSeleccionado.toString().replace('ex-', '') : null,
       productos: productosPlanos,
-      detallesLentes: { config: carrito.filter(i => i.isPaquete), mercadoPago: mpOrdenActual },
-      consulta,
+      detallesLentes: { config: carrito.filter(i => i.isPaquete), mercadoPago: mpData || mpOrdenActual },
+      consulta: observaciones,
       lentesTerminados,
       motivoNoTerminado: lentesTerminados ? '' : motivoNoTerminado,
       subtotalCarrito,
+      descuento: descuentoMonto,
       total,
       adelanto: valAdelanto,
       saldoPendiente: Math.max(0, total - valAdelanto),
       estadoPago: valAdelanto >= total ? 'Pagado' : 'Pendiente',
-      graduacion: [...new Set(graduacionesParaDb)].join(', ')
+      graduacion: [...new Set(graduacionesParaDb)].join(', '),
+      metodoPago
     };
 
     await registrarVenta(venta);
@@ -440,10 +461,10 @@ const PuntoDeVenta = () => {
       });
     }
 
-    const ticketText = buildReceiptText({ ...venta, productos: carrito, fecha: new Date().toISOString() }, pacienteNombre);
-    window.alert(ticketText);
+    generarTicketVenta({ ...venta, productos: carrito, fecha: new Date().toISOString() }, pacienteNombre, carrito);
     
     setCarrito([]); setPacienteId(''); setExamenSeleccionado(''); setMetodoPago('Efectivo'); setEfectivoRecibido('');
+    setDescuentoTipo('none'); setDescuentoValor(''); setObservaciones(''); setMpOrdenActual(null);
   };
 
   // --- Handler Procesar Venta ---
@@ -452,9 +473,6 @@ const PuntoDeVenta = () => {
     
     if (metodoPago === 'Mercado Pago') {
       setModalMercadoPago(true);
-      setMpStatusInfo('Terminal Virtual Mercado Pago lista. Haz clic en "Crear Orden" para iniciar.');
-      setMpLogs([]);
-      setMpOrdenActual(null);
       return;
     }
 
@@ -477,14 +495,25 @@ const PuntoDeVenta = () => {
                   key={cat}
                   onClick={() => setCategoriaTop(cat)}
                   style={{
-                    flex: 1, padding: '1rem', border: 'none', backgroundColor: categoriaTop === cat ? '#eff6ff' : 'white',
+                    flex: 1, padding: '0.75rem', border: 'none', backgroundColor: categoriaTop === cat ? '#eff6ff' : 'white',
                     color: categoriaTop === cat ? '#2563eb' : '#64748b', fontWeight: 'bold', cursor: 'pointer',
-                    borderBottom: categoriaTop === cat ? '3px solid #2563eb' : '3px solid transparent', transition: 'all 0.2s', fontSize: '0.95rem'
+                    borderBottom: categoriaTop === cat ? '3px solid #2563eb' : '3px solid transparent', transition: 'all 0.2s', fontSize: '0.9rem'
                   }}
                 >
                   {cat}
                 </button>
               ))}
+            </div>
+            {/* Barra de búsqueda de productos */}
+            <div style={{ padding: '0.75rem 1.25rem 0 1.25rem' }}>
+              <div style={{ position: 'relative' }}>
+                <Search size={16} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+                <input
+                  type="text" placeholder="Buscar por marca o modelo..."
+                  value={busquedaProducto} onChange={e => setBusquedaProducto(e.target.value)}
+                  style={{ width: '100%', padding: '0.6rem 0.75rem 0.6rem 2.25rem', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.85rem', backgroundColor: '#f8fafc' }}
+                />
+              </div>
             </div>
             <div style={{ padding: '1.25rem', flex: 1, overflowY: 'auto' }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '1rem' }}>
@@ -728,16 +757,42 @@ const PuntoDeVenta = () => {
 
           {/* Bottom Fixed Totals */}
           <div style={{ borderTop: '1px solid #e2e8f0', padding: '1.25rem', backgroundColor: 'white' }}>
-            <div style={{ backgroundColor: '#f1f5f9', padding: '1rem', borderRadius: '8px', marginBottom: '1.25rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', color: '#64748b', marginBottom: '0.5rem' }}>
+            <div style={{ backgroundColor: '#f1f5f9', padding: '1rem', borderRadius: '8px', marginBottom: '1rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', color: '#64748b', marginBottom: '0.35rem' }}>
                 <span>Subtotal</span><span>$ {subtotalCarrito.toLocaleString()}</span>
               </div>
+              {descuentoMonto > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', color: '#dc2626', marginBottom: '0.35rem' }}>
+                  <span>Descuento {descuentoTipo === 'percent' ? `(${descuentoValor}%)` : ''}</span><span>- $ {descuentoMonto.toLocaleString()}</span>
+                </div>
+              )}
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.1rem', fontWeight: 'bold', color: '#0f172a' }}>
                 <span>Total a pagar</span><span>$ {total.toLocaleString()}</span>
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '1.25rem' }}>
+            {/* Descuentos */}
+            <div style={{ marginBottom: '1rem', padding: '0.75rem', backgroundColor: '#fef2f2', borderRadius: '8px', border: '1px solid #fecaca' }}>
+              <div style={{ fontWeight: 'bold', fontSize: '0.85rem', color: '#991b1b', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}><Tag size={14} /> Descuento</div>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <select value={descuentoTipo} onChange={e => { setDescuentoTipo(e.target.value); setDescuentoValor(''); }} style={{ padding: '0.4rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', flex: 1 }}>
+                  <option value="none">Sin descuento</option>
+                  <option value="percent">Porcentaje (%)</option>
+                  <option value="fixed">Monto fijo ($)</option>
+                </select>
+                {descuentoTipo !== 'none' && (
+                  <input type="number" min="0" placeholder={descuentoTipo === 'percent' ? '% desc.' : '$ desc.'} value={descuentoValor} onChange={e => setDescuentoValor(e.target.value)} style={{ width: '90px', padding: '0.4rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', textAlign: 'right' }} />
+                )}
+              </div>
+            </div>
+
+            {/* Observaciones */}
+            <div style={{ marginBottom: '1rem' }}>
+              <div style={{ fontWeight: 'bold', fontSize: '0.85rem', color: '#475569', marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}><FileText size={14} /> Observaciones</div>
+              <textarea value={observaciones} onChange={e => setObservaciones(e.target.value)} placeholder="Notas de la venta..." rows={2} style={{ width: '100%', padding: '0.5rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.85rem', resize: 'vertical', fontFamily: 'inherit' }} />
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '1rem' }}>
               {['Efectivo', 'Mercado Pago', 'Débito', 'Crédito', 'Transferencia'].map(m => (
                 <button
                   key={m} onClick={() => setMetodoPago(m)}
@@ -753,13 +808,12 @@ const PuntoDeVenta = () => {
               ))}
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-              <span style={{ fontSize: '0.9rem', color: '#64748b' }}>Efectivo recibido</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <span style={{ fontSize: '0.9rem', color: '#64748b' }}>Adelanto / Efectivo</span>
               <div style={{ position: 'relative', width: '140px' }}>
-                <span style={{ position: 'absolute', right: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#0f172a', fontSize: '0.9rem', fontWeight: 'bold' }}>$ 0</span>
                 <input 
-                  type="number" value={efectivoRecibido} onChange={e => setEfectivoRecibido(e.target.value)} placeholder=""
-                  style={{ width: '100%', padding: '0.5rem 2.5rem 0.5rem 0.75rem', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#f1f5f9', textAlign: 'right', fontSize: '0.9rem', fontWeight: 'bold', color: '#0f172a' }}
+                  type="number" value={efectivoRecibido} onChange={e => setEfectivoRecibido(e.target.value)} placeholder={String(total)}
+                  style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#f1f5f9', textAlign: 'right', fontSize: '0.9rem', fontWeight: 'bold', color: '#0f172a' }}
                 />
               </div>
             </div>
@@ -810,320 +864,45 @@ const PuntoDeVenta = () => {
       )}
 
       {modalRegistroPaciente && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ backgroundColor: 'white', borderRadius: '12px', width: '500px', display: 'flex', flexDirection: 'column', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}>
-            <div style={{ padding: '1.25rem', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2 style={{ margin: 0, fontSize: '1.25rem', color: '#1e293b' }}>Añadir Nuevo Paciente</h2>
-              <button onClick={() => setModalRegistroPaciente(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={24} color="#64748b" /></button>
-            </div>
-            <form onSubmit={handleGuardarPaciente} style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div>
-                <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', fontWeight: 'bold' }}>Nombre</label>
-                <input required type="text" value={formPaciente.nombre} onChange={e => setFormPaciente({...formPaciente, nombre: e.target.value})} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
-              </div>
-              <div>
-                <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', fontWeight: 'bold' }}>Apellidos</label>
-                <input required type="text" value={formPaciente.apellidos} onChange={e => setFormPaciente({...formPaciente, apellidos: e.target.value})} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
-              </div>
-              <div style={{ display: 'flex', gap: '1rem' }}>
-                <div style={{ flex: 1 }}>
-                  <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', fontWeight: 'bold' }}>Teléfono</label>
-                  <input type="tel" value={formPaciente.telefono} onChange={e => setFormPaciente({...formPaciente, telefono: e.target.value})} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', fontWeight: 'bold' }}>Nacimiento</label>
-                  <input type="date" value={formPaciente.fechaNacimiento} onChange={e => setFormPaciente({...formPaciente, fechaNacimiento: e.target.value})} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
-                </div>
-              </div>
-              <div>
-                <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', fontWeight: 'bold' }}>Correo Electrónico</label>
-                <input type="email" value={formPaciente.correo} onChange={e => setFormPaciente({...formPaciente, correo: e.target.value})} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
-              </div>
-              <div>
-                <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', fontWeight: 'bold' }}>Dirección</label>
-                <input type="text" value={formPaciente.direccion} onChange={e => setFormPaciente({...formPaciente, direccion: e.target.value})} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
-              </div>
-              
-              <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
-                <button type="button" onClick={() => setModalRegistroPaciente(false)} style={{ padding: '0.75rem 1.5rem', backgroundColor: 'transparent', border: 'none', color: '#64748b', fontWeight: 'bold', cursor: 'pointer' }}>Cancelar</button>
-                <button type="submit" style={{ padding: '0.75rem 1.5rem', backgroundColor: '#3b82f6', border: 'none', borderRadius: '8px', color: 'white', fontWeight: 'bold', cursor: 'pointer' }}>Guardar Paciente</button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <FormularioPaciente 
+          onGuardar={handleGuardarPaciente} 
+          onCancelar={() => setModalRegistroPaciente(false)} 
+        />
       )}
 
       {modalRegistroExamen && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ backgroundColor: 'white', borderRadius: '12px', width: '800px', maxHeight: '90vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}>
-            <div style={{ padding: '1.25rem', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#f8fafc', position: 'sticky', top: 0, zIndex: 10 }}>
-              <h2 style={{ margin: 0, fontSize: '1.25rem', color: '#1e293b' }}>Nuevo Examen de la Vista</h2>
-              <button onClick={() => setModalRegistroExamen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={24} color="#64748b" /></button>
-            </div>
-            
-            <form onSubmit={handleGuardarExamen} style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-              <div style={{ display: 'flex', gap: '1rem' }}>
-                <div style={{ flex: 1 }}>
-                  <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', fontWeight: 'bold' }}>Distancia Pupilar (DP)</label>
-                  <input type="text" value={formExamen.dp} onChange={e => setFormExamen({...formExamen, dp: e.target.value})} placeholder="Ej: 62mm" style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
-                </div>
-              </div>
-
-              {/* Contenedor OD / OI */}
-              <div style={{ display: 'flex', gap: '1.5rem' }}>
-                {/* Ojo Derecho */}
-                <div style={{ flex: 1, backgroundColor: '#f1f5f9', padding: '1rem', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
-                  <h4 style={{ margin: '0 0 1rem 0', color: '#1d4ed8', borderBottom: '2px solid #93c5fd', paddingBottom: '0.5rem' }}>Ojo Derecho (OD)</h4>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.8rem' }}>Esfera</label>
-                      <input type="number" step="0.25" value={formExamen.od.esfera} onChange={e => setFormExamen({...formExamen, od: {...formExamen.od, esfera: e.target.value}})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.8rem' }}>Cilindro</label>
-                      <input type="number" step="0.25" value={formExamen.od.cilindro} onChange={e => setFormExamen({...formExamen, od: {...formExamen.od, cilindro: e.target.value}})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.8rem' }}>Eje</label>
-                      <input type="number" min="0" max="180" value={formExamen.od.eje} onChange={e => setFormExamen({...formExamen, od: {...formExamen.od, eje: e.target.value}})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.8rem' }}>Adición</label>
-                      <input type="number" step="0.25" value={formExamen.od.adicion} onChange={e => setFormExamen({...formExamen, od: {...formExamen.od, adicion: e.target.value}})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
-                    </div>
-                    <div style={{ gridColumn: 'span 2' }}>
-                      <label style={{ display: 'block', fontSize: '0.8rem' }}>Agudeza</label>
-                      <input type="text" value={formExamen.od.agudeza} onChange={e => setFormExamen({...formExamen, od: {...formExamen.od, agudeza: e.target.value}})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Ojo Izquierdo */}
-                <div style={{ flex: 1, backgroundColor: '#f1f5f9', padding: '1rem', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
-                  <h4 style={{ margin: '0 0 1rem 0', color: '#1d4ed8', borderBottom: '2px solid #93c5fd', paddingBottom: '0.5rem' }}>Ojo Izquierdo (OS)</h4>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.8rem' }}>Esfera</label>
-                      <input type="number" step="0.25" value={formExamen.oi.esfera} onChange={e => setFormExamen({...formExamen, oi: {...formExamen.oi, esfera: e.target.value}})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.8rem' }}>Cilindro</label>
-                      <input type="number" step="0.25" value={formExamen.oi.cilindro} onChange={e => setFormExamen({...formExamen, oi: {...formExamen.oi, cilindro: e.target.value}})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.8rem' }}>Eje</label>
-                      <input type="number" min="0" max="180" value={formExamen.oi.eje} onChange={e => setFormExamen({...formExamen, oi: {...formExamen.oi, eje: e.target.value}})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.8rem' }}>Adición</label>
-                      <input type="number" step="0.25" value={formExamen.oi.adicion} onChange={e => setFormExamen({...formExamen, oi: {...formExamen.oi, adicion: e.target.value}})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
-                    </div>
-                    <div style={{ gridColumn: 'span 2' }}>
-                      <label style={{ display: 'block', fontSize: '0.8rem' }}>Agudeza</label>
-                      <input type="text" value={formExamen.oi.agudeza} onChange={e => setFormExamen({...formExamen, oi: {...formExamen.oi, agudeza: e.target.value}})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '0.5rem' }}>
-                <button type="button" onClick={() => setModalRegistroExamen(false)} style={{ padding: '0.75rem 1.5rem', backgroundColor: 'transparent', border: 'none', color: '#64748b', fontWeight: 'bold', cursor: 'pointer' }}>Cancelar</button>
-                <button type="submit" style={{ padding: '0.75rem 1.5rem', backgroundColor: '#3b82f6', border: 'none', borderRadius: '8px', color: 'white', fontWeight: 'bold', cursor: 'pointer' }}>Guardar Examen</button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <FormularioExamen 
+          pacienteId={pacienteId}
+          onGuardar={handleGuardarExamen}
+          onCancelar={() => setModalRegistroExamen(false)}
+        />
       )}
 
       {modalRegistroAdicional && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ backgroundColor: 'white', borderRadius: '12px', width: '800px', maxHeight: '90vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}>
-            <div style={{ padding: '1.25rem', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fef3c7', position: 'sticky', top: 0, zIndex: 10 }}>
-              <h2 style={{ margin: 0, fontSize: '1.25rem', color: '#92400e' }}>Receta para Persona Adicional</h2>
-              <button onClick={() => setModalRegistroAdicional(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={24} color="#92400e" /></button>
-            </div>
-            
-            <form onSubmit={(e) => { e.preventDefault(); setModalRegistroAdicional(false); }} style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-              <div style={{ display: 'flex', gap: '1rem' }}>
-                <div style={{ flex: 1 }}>
-                  <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', fontWeight: 'bold' }}>Nombre de la persona adicional *</label>
-                  <input required type="text" value={adicionalNombre} onChange={e => setAdicionalNombre(e.target.value)} placeholder="Ej: Mi novia" style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
-                </div>
-              </div>
-
-              {/* Contenedor OD / OI */}
-              <div style={{ display: 'flex', gap: '1.5rem' }}>
-                {/* Ojo Derecho */}
-                <div style={{ flex: 1, backgroundColor: '#fffbeb', padding: '1rem', borderRadius: '8px', border: '1px solid #fde68a' }}>
-                  <h4 style={{ margin: '0 0 1rem 0', color: '#d97706', borderBottom: '2px solid #fcd34d', paddingBottom: '0.5rem' }}>Ojo Derecho (OD)</h4>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                    <div><label style={{ display: 'block', fontSize: '0.8rem' }}>Esfera</label><input type="number" step="0.25" value={adicionalExamen.od.esfera} onChange={e => setAdicionalExamen({...adicionalExamen, od: {...adicionalExamen.od, esfera: e.target.value}})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1' }} /></div>
-                    <div><label style={{ display: 'block', fontSize: '0.8rem' }}>Cilindro</label><input type="number" step="0.25" value={adicionalExamen.od.cilindro} onChange={e => setAdicionalExamen({...adicionalExamen, od: {...adicionalExamen.od, cilindro: e.target.value}})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1' }} /></div>
-                    <div><label style={{ display: 'block', fontSize: '0.8rem' }}>Eje</label><input type="number" min="0" max="180" value={adicionalExamen.od.eje} onChange={e => setAdicionalExamen({...adicionalExamen, od: {...adicionalExamen.od, eje: e.target.value}})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1' }} /></div>
-                    <div><label style={{ display: 'block', fontSize: '0.8rem' }}>Adición</label><input type="number" step="0.25" value={adicionalExamen.od.adicion} onChange={e => setAdicionalExamen({...adicionalExamen, od: {...adicionalExamen.od, adicion: e.target.value}})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1' }} /></div>
-                  </div>
-                </div>
-
-                {/* Ojo Izquierdo */}
-                <div style={{ flex: 1, backgroundColor: '#fffbeb', padding: '1rem', borderRadius: '8px', border: '1px solid #fde68a' }}>
-                  <h4 style={{ margin: '0 0 1rem 0', color: '#d97706', borderBottom: '2px solid #fcd34d', paddingBottom: '0.5rem' }}>Ojo Izquierdo (OS)</h4>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                    <div><label style={{ display: 'block', fontSize: '0.8rem' }}>Esfera</label><input type="number" step="0.25" value={adicionalExamen.oi.esfera} onChange={e => setAdicionalExamen({...adicionalExamen, oi: {...adicionalExamen.oi, esfera: e.target.value}})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1' }} /></div>
-                    <div><label style={{ display: 'block', fontSize: '0.8rem' }}>Cilindro</label><input type="number" step="0.25" value={adicionalExamen.oi.cilindro} onChange={e => setAdicionalExamen({...adicionalExamen, oi: {...adicionalExamen.oi, cilindro: e.target.value}})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1' }} /></div>
-                    <div><label style={{ display: 'block', fontSize: '0.8rem' }}>Eje</label><input type="number" min="0" max="180" value={adicionalExamen.oi.eje} onChange={e => setAdicionalExamen({...adicionalExamen, oi: {...adicionalExamen.oi, eje: e.target.value}})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1' }} /></div>
-                    <div><label style={{ display: 'block', fontSize: '0.8rem' }}>Adición</label><input type="number" step="0.25" value={adicionalExamen.oi.adicion} onChange={e => setAdicionalExamen({...adicionalExamen, oi: {...adicionalExamen.oi, adicion: e.target.value}})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1' }} /></div>
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '0.5rem' }}>
-                <button type="button" onClick={() => setModalRegistroAdicional(false)} style={{ padding: '0.75rem 1.5rem', backgroundColor: 'transparent', border: 'none', color: '#64748b', fontWeight: 'bold', cursor: 'pointer' }}>Cancelar</button>
-                <button type="submit" style={{ padding: '0.75rem 1.5rem', backgroundColor: '#f59e0b', border: 'none', borderRadius: '8px', color: 'white', fontWeight: 'bold', cursor: 'pointer' }}>Guardar Temporalmente</button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <FormularioExamen 
+          title="Receta para Persona Adicional"
+          onGuardar={(examenData) => {
+            setAdicionalExamen({ od: examenData.od, oi: examenData.oi });
+            setModalRegistroAdicional(false);
+          }}
+          onCancelar={() => setModalRegistroAdicional(false)}
+        />
       )}
+
       {modalMercadoPago && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
-          <div style={{ backgroundColor: 'white', borderRadius: '16px', width: '750px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', overflow: 'hidden' }}>
-            
-            {/* Header Modal MP */}
-            <div style={{ padding: '1.25rem 1.5rem', backgroundColor: '#009ee3', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <div style={{ backgroundColor: 'white', padding: '0.4rem 0.6rem', borderRadius: '8px', fontWeight: 'bold', color: '#009ee3', fontSize: '0.9rem' }}>
-                  Mercado Pago
-                </div>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: '1.15rem', color: 'white' }}>Terminal Virtual & Simulación de Órdenes</h3>
-                  <p style={{ margin: '0.1rem 0 0 0', fontSize: '0.8rem', opacity: 0.9 }}>Integración Presencial (v1/orders)</p>
-                </div>
-              </div>
-              <button onClick={() => setModalMercadoPago(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'white' }}><X size={24} /></button>
-            </div>
-
-            {/* Content Body */}
-            <div style={{ padding: '1.5rem', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-              
-              {/* Box Cuentas de Prueba */}
-              <div style={{ backgroundColor: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '10px', padding: '1rem' }}>
-                <h4 style={{ margin: '0 0 0.5rem 0', color: '#0369a1', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  🔑 Cuentas de Prueba Configuradas (.env)
-                </h4>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', fontSize: '0.82rem', color: '#0c4a6e' }}>
-                  <div>
-                    <strong>Vendedor:</strong> TESTUSER5420596611249074639<br/>
-                    <strong>Pass:</strong> GR5saBuGut
-                  </div>
-                  <div>
-                    <strong>Comprador:</strong> TESTUSER6704094853165047914<br/>
-                    <strong>Pass:</strong> 4aEeG20BLm
-                  </div>
-                </div>
-              </div>
-
-              {/* Box Estado de la Orden Actual */}
-              <div style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '1rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#64748b', marginBottom: '0.25rem' }}>
-                  <span>Total de la Venta:</span>
-                  <span>$ {total.toLocaleString()} MXN</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
-                  <span style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#0369a1' }}>Monto a cobrar en Terminal (Adelanto/Pago actual):</span>
-                  <span style={{ fontSize: '1.25rem', fontWeight: '900', color: '#009ee3' }}>$ {(parseFloat(efectivoRecibido) || total).toLocaleString()} MXN</span>
-                </div>
-                {Math.max(0, total - (parseFloat(efectivoRecibido) || total)) > 0 && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#b91c1c', fontWeight: 'bold', marginBottom: '0.5rem' }}>
-                    <span>Saldo restante que quedará pendiente:</span>
-                    <span>$ {Math.max(0, total - (parseFloat(efectivoRecibido) || total)).toLocaleString()} MXN</span>
-                  </div>
-                )}
-                <div style={{ fontSize: '0.85rem', color: '#334155', borderTop: '1px solid #e2e8f0', paddingTop: '0.5rem' }}>
-                  <strong>ID Orden MP:</strong> {mpOrdenActual?.id || mpOrdenActual?.external_reference || 'Pendiente de crear'}<br/>
-                  <strong>Estatus actual:</strong> <span style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', backgroundColor: (mpOrdenActual?.status === 'processed' || mpOrdenActual?.data?.status === 'processed') ? '#dcfce7' : '#fef3c7', color: (mpOrdenActual?.status === 'processed' || mpOrdenActual?.data?.status === 'processed') ? '#166534' : '#92400e', fontWeight: 'bold', fontSize: '0.8rem' }}>{(mpOrdenActual?.status || mpOrdenActual?.data?.status || 'SIN_ORDEN').toUpperCase()}</span>
-                </div>
-                {mpStatusInfo && (
-                  <div style={{ marginTop: '0.75rem', fontSize: '0.85rem', color: '#1e293b', fontWeight: 'bold', backgroundColor: '#e0f2fe', padding: '0.5rem 0.75rem', borderRadius: '6px', borderLeft: '4px solid #0284c7' }}>
-                    {mpStatusInfo}
-                  </div>
-                )}
-              </div>
-
-              {/* Botones de Acción Mercado Pago */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.4rem' }}>
-                <button
-                  onClick={handleCrearOrdenMP} disabled={mpCargando}
-                  style={{ backgroundColor: '#009ee3', color: 'white', border: 'none', borderRadius: '8px', padding: '0.55rem 0.35rem', fontWeight: 'bold', fontSize: '0.75rem', cursor: mpCargando ? 'not-allowed' : 'pointer', opacity: mpCargando ? 0.7 : 1 }}
-                >
-                  1. Crear Orden
-                </button>
-                <button
-                  onClick={handleSimularEventoMP} disabled={mpCargando || !mpOrdenActual?.id}
-                  style={{ backgroundColor: mpOrdenActual?.id ? '#10b981' : '#94a3b8', color: 'white', border: 'none', borderRadius: '8px', padding: '0.55rem 0.35rem', fontWeight: 'bold', fontSize: '0.75rem', cursor: (!mpOrdenActual?.id || mpCargando) ? 'not-allowed' : 'pointer' }}
-                >
-                  2a. Éxito
-                </button>
-                <button
-                  onClick={() => handleSimularFallaMP('insufficient_amount')} disabled={mpCargando || !mpOrdenActual?.id}
-                  style={{ backgroundColor: mpOrdenActual?.id ? '#ef4444' : '#94a3b8', color: 'white', border: 'none', borderRadius: '8px', padding: '0.55rem 0.35rem', fontWeight: 'bold', fontSize: '0.75rem', cursor: (!mpOrdenActual?.id || mpCargando) ? 'not-allowed' : 'pointer' }}
-                >
-                  2b. Falla
-                </button>
-                <button
-                  onClick={handleSimularReembolsoMP} disabled={mpCargando || !mpOrdenActual?.id}
-                  style={{ backgroundColor: mpOrdenActual?.id ? '#f59e0b' : '#94a3b8', color: 'white', border: 'none', borderRadius: '8px', padding: '0.55rem 0.35rem', fontWeight: 'bold', fontSize: '0.75rem', cursor: (!mpOrdenActual?.id || mpCargando) ? 'not-allowed' : 'pointer' }}
-                >
-                  2c. Reembolso
-                </button>
-                <button
-                  onClick={handleSimularCancelacionMP} disabled={mpCargando || !mpOrdenActual?.id}
-                  style={{ backgroundColor: mpOrdenActual?.id ? '#64748b' : '#94a3b8', color: 'white', border: 'none', borderRadius: '8px', padding: '0.55rem 0.35rem', fontWeight: 'bold', fontSize: '0.75rem', cursor: (!mpOrdenActual?.id || mpCargando) ? 'not-allowed' : 'pointer' }}
-                >
-                  2d. Cancelar
-                </button>
-                <button
-                  onClick={handleSimularExpiracionMP} disabled={mpCargando || !mpOrdenActual?.id}
-                  style={{ backgroundColor: mpOrdenActual?.id ? '#ea580c' : '#94a3b8', color: 'white', border: 'none', borderRadius: '8px', padding: '0.55rem 0.35rem', fontWeight: 'bold', fontSize: '0.75rem', cursor: (!mpOrdenActual?.id || mpCargando) ? 'not-allowed' : 'pointer' }}
-                >
-                  2e. Expirar
-                </button>
-                <button
-                  onClick={handleSimularAccionRequeridaMP} disabled={mpCargando || !mpOrdenActual?.id}
-                  style={{ backgroundColor: mpOrdenActual?.id ? '#0284c7' : '#94a3b8', color: 'white', border: 'none', borderRadius: '8px', padding: '0.55rem 0.35rem', fontWeight: 'bold', fontSize: '0.75rem', cursor: (!mpOrdenActual?.id || mpCargando) ? 'not-allowed' : 'pointer' }}
-                >
-                  2f. Acción Req.
-                </button>
-                <button
-                  onClick={() => handleObtenerOrdenMP()} disabled={mpCargando || !mpOrdenActual?.id}
-                  style={{ backgroundColor: '#6366f1', color: 'white', border: 'none', borderRadius: '8px', padding: '0.55rem 0.35rem', fontWeight: 'bold', fontSize: '0.75rem', cursor: (!mpOrdenActual?.id || mpCargando) ? 'not-allowed' : 'pointer' }}
-                >
-                  3. Consultar Estado
-                </button>
-              </div>
-
-              {/* Terminal Logs */}
-              <div>
-                <h4 style={{ margin: '0 0 0.4rem 0', fontSize: '0.85rem', color: '#64748b' }}>Log de Peticiones API Mercado Pago:</h4>
-                <div style={{ backgroundColor: '#0f172a', color: '#38bdf8', padding: '0.75rem', borderRadius: '8px', fontFamily: 'monospace', fontSize: '0.78rem', maxHeight: '180px', overflowY: 'auto', whiteSpace: 'pre-wrap' }}>
-                  {mpLogs.length === 0 ? '// Presiona "Crear Orden MP" para iniciar' : mpLogs.join('\n\n')}
-                </div>
-              </div>
-            </div>
-
-            {/* Footer Modal */}
-            <div style={{ padding: '1rem 1.5rem', borderTop: '1px solid #e2e8f0', backgroundColor: '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <button onClick={() => setModalMercadoPago(false)} style={{ backgroundColor: 'transparent', border: 'none', color: '#64748b', fontWeight: 'bold', cursor: 'pointer' }}>
-                Cancelar
-              </button>
-              <button
-                onClick={handleFinalizarVentaBd}
-                style={{ backgroundColor: '#16a34a', color: 'white', padding: '0.75rem 1.5rem', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
-              >
-                <CheckCircle size={18} /> Confirmar Venta y Generar Ticket
-              </button>
-            </div>
-          </div>
-        </div>
+        <ModalMercadoPago
+          monto={parseFloat(efectivoRecibido) || total}
+          descripcion={`Pago Óptica Dioptrios ($${(parseFloat(efectivoRecibido) || total)} MXN)`}
+          crearOrdenMercadoPago={crearOrdenMercadoPago}
+          simularEventoMercadoPago={simularEventoMercadoPago}
+          obtenerOrdenMercadoPago={obtenerOrdenMercadoPago}
+          onCancel={() => setModalMercadoPago(false)}
+          onSuccess={async (ordenData) => {
+            setMpOrdenActual(ordenData);
+            setModalMercadoPago(false);
+            await registrarVentaEnSistema(ordenData);
+          }}
+        />
       )}
 
     </div>

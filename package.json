@@ -12,6 +12,7 @@
     "seed": "node server/seed-sample-data.mjs"
   },
   "dependencies": {
+    "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.4",
@@ -21,7 +22,8 @@
     "pg": "^8.22.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
-    "react-router-dom": "^7.16.0"
+    "react-router-dom": "^7.16.0",
+    "uuid": "^14.0.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

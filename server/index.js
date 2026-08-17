@@ -4,6 +4,8 @@ import pkg from 'pg';
 const { Pool } = pkg;
 import dotenv from 'dotenv';
 import path from 'path';
+import bcrypt from 'bcryptjs';
+import { v4 as uuidv4 } from 'uuid';
 import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -17,8 +19,8 @@ const puerto = process.env.PORT || 4000;
 aplicacion.use(cors({ origin: true }));
 aplicacion.use(express.json({ limit: '10mb' }));
 
-
-
+// Memoria para Modo Simulación (Testing UI sin terminal física)
+const mockOrderStates = new Map();
 // Base de datos
 const conexionBd = new Pool({
   host: process.env.DB_HOST || '192.168.1.73',
@@ -149,12 +151,164 @@ const inicializarTablas = async () => {
     await conexionBd.query(`ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS apellidos VARCHAR(255) DEFAULT '';`);
     await conexionBd.query(`ALTER TABLE ventas ADD COLUMN IF NOT EXISTS graduacion TEXT;`);
     await conexionBd.query(`ALTER TABLE productos ALTER COLUMN ruta_imagen TYPE TEXT;`);
+    await conexionBd.query(`ALTER TABLE ventas ADD COLUMN IF NOT EXISTS descuento DECIMAL(12,2) DEFAULT 0;`);
+    await conexionBd.query(`ALTER TABLE ventas ADD COLUMN IF NOT EXISTS metodoPago VARCHAR(128) DEFAULT 'Efectivo';`);
     
+    // Auth columns
+    await conexionBd.query(`ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS email VARCHAR(255);`);
+    await conexionBd.query(`ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT FALSE;`);
+    await conexionBd.query(`ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS verification_token VARCHAR(255);`);
+    await conexionBd.query(`ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS reset_token VARCHAR(255);`);
+
     console.log('✅ Tablas verificadas en PostgreSQL.');
   } catch (error) {
     console.error('❌ Fallo al construir tablas:', error);
   }
 };
+
+// Rutas usuarios
+aplicacion.get('/api/usuarios', async (peticion, respuesta) => {
+  try {
+    const { rows: filas } = await conexionBd.query('SELECT id, username, name, role, email, is_verified FROM usuarios ORDER BY id ASC');
+    respuesta.json(filas);
+  } catch (error) {
+    respuesta.status(500).json({ error: error.message });
+  }
+});
+
+aplicacion.post('/api/usuarios', async (peticion, respuesta) => {
+  try {
+    const { username, password, role, name, email } = peticion.body;
+    
+    // Validar unicidad
+    const { rows: existentes } = await conexionBd.query('SELECT id FROM usuarios WHERE username = $1 OR email = $2', [username, email]);
+    if (existentes.length > 0) {
+      return respuesta.status(400).json({ error: 'El nombre de usuario o correo ya existe.' });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+    const verificationToken = uuidv4();
+
+    const consulta = `
+      INSERT INTO usuarios (username, password, role, name, email, is_verified, verification_token)
+      VALUES ($1, $2, $3, $4, $5, FALSE, $6)
+      RETURNING id, username, role, name, email, is_verified;
+    `;
+    const { rows: filas } = await conexionBd.query(consulta, [username, hashedPassword, role, name, email, verificationToken]);
+    
+    // Enviar correo de verificación
+    const baseUrl = peticion.get('origin') || 'http://localhost:5173';
+    const verifyUrl = `${baseUrl}/verificar-correo?token=${verificationToken}`;
+    const emailHtml = `
+      <div style="font-family: 'Google Sans', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
+        <h2 style="color: #2563eb;">Bienvenido a Dioptrios</h2>
+        <p>Hola ${name},</p>
+        <p>Has sido registrado como <strong>${role}</strong> en el sistema de Óptica Dioptrios.</p>
+        <p>Tu nombre de usuario es: <strong>${username}</strong></p>
+        <p>Para activar tu cuenta y poder iniciar sesión, haz clic en el siguiente botón:</p>
+        <a href="${verifyUrl}" style="display: inline-block; background-color: #2563eb; color: white; padding: 10px 20px; text-decoration: none; border-radius: 6px; margin: 20px 0;">Verificar Cuenta</a>
+        <p>Si no puedes hacer clic, copia y pega este enlace en tu navegador:</p>
+        <p><a href="${verifyUrl}">${verifyUrl}</a></p>
+      </div>
+    `;
+    await enviarEmail({ destinatario: email, asunto: 'Verifica tu cuenta de Dioptrios', html: emailHtml });
+
+    respuesta.json(filas[0]);
+  } catch (error) {
+    respuesta.status(500).json({ error: error.message });
+  }
+});
+
+aplicacion.get('/api/usuarios/verify/:token', async (peticion, respuesta) => {
+  try {
+    const { token } = peticion.params;
+    const { rows } = await conexionBd.query('SELECT id FROM usuarios WHERE verification_token = $1', [token]);
+    if (rows.length === 0) return respuesta.status(400).json({ error: 'Token inválido o expirado' });
+    
+    await conexionBd.query('UPDATE usuarios SET is_verified = TRUE, verification_token = NULL WHERE id = $1', [rows[0].id]);
+    respuesta.json({ success: true, message: 'Cuenta verificada exitosamente.' });
+  } catch (error) {
+    respuesta.status(500).json({ error: error.message });
+  }
+});
+
+aplicacion.post('/api/auth/login', async (peticion, respuesta) => {
+  try {
+    const { username, password } = peticion.body;
+    const { rows } = await conexionBd.query('SELECT * FROM usuarios WHERE username = $1', [username]);
+    if (rows.length === 0) return respuesta.status(401).json({ error: 'Credenciales inválidas' });
+    
+    const user = rows[0];
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) return respuesta.status(401).json({ error: 'Credenciales inválidas' });
+    if (!user.is_verified) return respuesta.status(403).json({ error: 'Debes verificar tu correo electrónico antes de iniciar sesión.' });
+
+    respuesta.json({ id: user.id, username: user.username, role: user.role, name: user.name, email: user.email });
+  } catch (error) {
+    respuesta.status(500).json({ error: error.message });
+  }
+});
+
+aplicacion.delete('/api/usuarios/:id', async (peticion, respuesta) => {
+  try {
+    const targetId = parseInt(peticion.params.id);
+    const callerRole = peticion.headers['x-caller-role'];
+    const callerId = parseInt(peticion.headers['x-caller-id']);
+
+    if (callerRole !== 'Super Usuario') return respuesta.status(403).json({ error: 'Solo el Super Usuario puede eliminar usuarios.' });
+    if (callerId === targetId) return respuesta.status(400).json({ error: 'No puedes eliminarte a ti mismo.' });
+
+    const { rows } = await conexionBd.query('DELETE FROM usuarios WHERE id = $1 RETURNING id', [targetId]);
+    if (rows.length === 0) return respuesta.status(404).json({ error: 'Usuario no encontrado' });
+    respuesta.json({ success: true });
+  } catch (error) {
+    respuesta.status(500).json({ error: error.message });
+  }
+});
+
+aplicacion.post('/api/usuarios/solicitar-reset', async (peticion, respuesta) => {
+  try {
+    const { usernameOrEmail } = peticion.body;
+    const { rows } = await conexionBd.query('SELECT id, email, name FROM usuarios WHERE username = $1 OR email = $1', [usernameOrEmail]);
+    if (rows.length === 0) return respuesta.status(404).json({ error: 'Usuario no encontrado' });
+    
+    const resetToken = uuidv4();
+    await conexionBd.query('UPDATE usuarios SET reset_token = $1 WHERE id = $2', [resetToken, rows[0].id]);
+    
+    const baseUrl = peticion.get('origin') || 'http://localhost:5173';
+    const resetUrl = `${baseUrl}/reset-password?token=${resetToken}`;
+    const emailHtml = `
+      <div style="font-family: 'Google Sans', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
+        <h2 style="color: #2563eb;">Restablecer Contraseña</h2>
+        <p>Hola ${rows[0].name},</p>
+        <p>Se ha solicitado un cambio de contraseña para tu cuenta.</p>
+        <a href="${resetUrl}" style="display: inline-block; background-color: #10b981; color: white; padding: 10px 20px; text-decoration: none; border-radius: 6px; margin: 20px 0;">Cambiar Contraseña</a>
+        <p>Si no solicitaste este cambio, puedes ignorar este correo.</p>
+      </div>
+    `;
+    await enviarEmail({ destinatario: rows[0].email, asunto: 'Cambio de Contraseña - Dioptrios', html: emailHtml });
+    respuesta.json({ success: true });
+  } catch (error) {
+    respuesta.status(500).json({ error: error.message });
+  }
+});
+
+aplicacion.post('/api/usuarios/reset-password', async (peticion, respuesta) => {
+  try {
+    const { token, newPassword } = peticion.body;
+    const { rows } = await conexionBd.query('SELECT id FROM usuarios WHERE reset_token = $1', [token]);
+    if (rows.length === 0) return respuesta.status(400).json({ error: 'Token inválido o expirado' });
+    
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+    await conexionBd.query('UPDATE usuarios SET password = $1, reset_token = NULL WHERE id = $2', [hashedPassword, rows[0].id]);
+    respuesta.json({ success: true });
+  } catch (error) {
+    respuesta.status(500).json({ error: error.message });
+  }
+});
+
 
 // Rutas pacientes
 aplicacion.get('/api/pacientes', async (peticion, respuesta) => {
@@ -361,17 +515,48 @@ aplicacion.get('/api/ventas', async (peticion, respuesta) => {
 
 aplicacion.post('/api/ventas', async (peticion, respuesta) => {
   try {
-    const { id, pacienteId, productos, detallesLentes, subtotalCarrito, total, adelanto, saldoPendiente, estadoPago, lentesTerminados, motivoNoTerminado, examenId, consultaTxt, fecha, graduacion } = peticion.body;
+    const { id, pacienteId, productos, detallesLentes, subtotalCarrito, total, adelanto, saldoPendiente, estadoPago, lentesTerminados, motivoNoTerminado, examenId, consultaTxt, fecha, graduacion, descuento, metodoPago } = peticion.body;
     const consulta = `
-      INSERT INTO ventas (id, pacienteId, productos, detallesLentes, subtotalCarrito, total, adelanto, saldoPendiente, estadoPago, lentesTerminados, motivoNoTerminado, examenId, consulta, fecha, graduacion) 
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) 
+      INSERT INTO ventas (id, pacienteId, productos, detallesLentes, subtotalCarrito, total, adelanto, saldoPendiente, estadoPago, lentesTerminados, motivoNoTerminado, examenId, consulta, fecha, graduacion, descuento, metodoPago) 
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) 
       RETURNING *;
     `;
-    const valores = [id, pacienteId, JSON.stringify(productos), JSON.stringify(detallesLentes), subtotalCarrito, total, adelanto, saldoPendiente, estadoPago, lentesTerminados, motivoNoTerminado, examenId, consultaTxt, fecha, graduacion];
+    const valores = [id, pacienteId, JSON.stringify(productos), JSON.stringify(detallesLentes), subtotalCarrito, total, adelanto, saldoPendiente, estadoPago, lentesTerminados, motivoNoTerminado, examenId, consultaTxt, fecha, graduacion, descuento || 0, metodoPago || 'Efectivo'];
     const { rows: filas } = await conexionBd.query(consulta, valores);
     respuesta.status(201).json(filas[0]);
   } catch (error) {
     console.error('❌ Error guardando venta:', error.message);
+    respuesta.status(500).json({ error: error.message });
+  }
+});
+
+// Corte de caja
+aplicacion.get('/api/ventas/corte-caja', async (peticion, respuesta) => {
+  try {
+    const { fecha } = peticion.query;
+    const targetDate = fecha || new Date().toISOString().split('T')[0];
+    const { rows } = await conexionBd.query(
+      `SELECT * FROM ventas WHERE DATE(fecha) = $1 ORDER BY fecha DESC`, [targetDate]
+    );
+    const ventasDelDia = rows;
+    const totalVentas = ventasDelDia.length;
+    const totalCobrado = ventasDelDia.reduce((s, v) => s + Number(v.adelanto || 0), 0);
+    const totalPendiente = ventasDelDia.reduce((s, v) => s + Number(v.saldopendiente || 0), 0);
+    const totalDescuentos = ventasDelDia.reduce((s, v) => s + Number(v.descuento || 0), 0);
+    const totalBruto = ventasDelDia.reduce((s, v) => s + Number(v.total || 0), 0);
+    
+    // Desglose por método de pago
+    const porMetodo = {};
+    ventasDelDia.forEach(v => {
+      const metodo = v.metodopago || 'Efectivo';
+      if (!porMetodo[metodo]) porMetodo[metodo] = { cantidad: 0, monto: 0 };
+      porMetodo[metodo].cantidad++;
+      porMetodo[metodo].monto += Number(v.adelanto || 0);
+    });
+    
+    respuesta.json({ fecha: targetDate, totalVentas, totalBruto, totalCobrado, totalPendiente, totalDescuentos, porMetodo, ventas: ventasDelDia });
+  } catch (error) {
+    console.error('❌ Error en corte de caja:', error);
     respuesta.status(500).json({ error: error.message });
   }
 });
@@ -572,7 +757,8 @@ aplicacion.post('/api/pedidos/enviar-correo-confirmacion', async (peticion, resp
     }).join('');
 
     const htmlContent = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+      <style>@import url('https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&display=swap');</style>
+      <div style="font-family: 'Google Sans', Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
         <div style="background-color: #2563eb; color: white; padding: 20px; text-align: center;">
           <h1 style="margin: 0; font-size: 24px;">Dioptrios - Confirmación de Pedido</h1>
         </div>
@@ -634,7 +820,8 @@ aplicacion.post('/api/pedidos/notificar-listo', async (peticion, respuesta) => {
     const itemsList = (productos || []).map(p => `<li>${p.marca || ''} ${p.modelo || ''} (${p.tipo || 'Producto'})</li>`).join('');
 
     const htmlContent = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+      <style>@import url('https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&display=swap');</style>
+      <div style="font-family: 'Google Sans', Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
         <div style="background-color: #16a34a; color: white; padding: 20px; text-align: center;">
           <h1 style="margin: 0; font-size: 24px;">¡Tu Pedido está Listo! 🎉</h1>
         </div>
@@ -747,11 +934,31 @@ aplicacion.post('/api/mercadopago/crear-orden', async (peticion, respuesta) => {
     const { external_reference, description, total_amount } = peticion.body;
     
     const extRef = external_reference || `ext-${Date.now()}`;
+    const montoStr = String(total_amount || '10.00');
+    
+    // MODO SIMULACIÓN PARA UI SIN TERMINAL FÍSICA
+    if (true) {
+      console.log('🔹 [MOCK] Creando orden simulada para UI');
+      const mockId = `ORD${Date.now()}TEST`;
+      mockOrderStates.set(mockId, { status: 'opened', status_detail: 'opened' });
+      return respuesta.json({
+        id: mockId,
+        external_reference: extRef,
+        status: 'opened',
+        type: 'point',
+        transactions: { payments: [{ amount: montoStr }] }
+      });
+    }
+
     const payload = {
       type: 'point',
       external_reference: extRef,
-      description: description || 'Compra de Óptica',
-      total_amount: String(total_amount || '10.00'),
+      transactions: {
+        payments: [{ amount: montoStr }]
+      },
+      config: {
+        point: { terminal_id: 'CAJAOPTICA01' }
+      }
     };
 
     const resMp = await fetch('https://api.mercadopago.com/v1/orders', {
@@ -809,6 +1016,20 @@ aplicacion.post('/api/mercadopago/simular-evento', async (peticion, respuesta) =
       };
     }
 
+    // MODO SIMULACIÓN PARA UI SIN TERMINAL FÍSICA
+    if (order_id.includes('TEST')) {
+      console.log(`🔹 [MOCK] Simulando evento ${payload.status} para orden ${order_id}`);
+      mockOrderStates.set(order_id, { status: payload.status, status_detail: payload.status_detail || payload.status });
+      return respuesta.json({
+        action: `order.${payload.status}`,
+        data: {
+          id: order_id,
+          status: payload.status,
+          status_detail: payload.status_detail || payload.status
+        }
+      });
+    }
+
     const resMp = await fetch(`https://api.mercadopago.com/v1/orders/${encodeURIComponent(order_id)}/events`, {
       method: 'POST',
       headers: {
@@ -839,6 +1060,18 @@ aplicacion.get('/api/mercadopago/obtener-orden/:orderId', async (peticion, respu
     }
 
     const { orderId } = peticion.params;
+
+    // MODO SIMULACIÓN PARA UI SIN TERMINAL FÍSICA
+    if (orderId.includes('TEST')) {
+      console.log(`🔹 [MOCK] Consultando estado simulado de orden ${orderId}`);
+      const mockState = mockOrderStates.get(orderId) || { status: 'processed', status_detail: 'accredited' };
+      return respuesta.json({
+        id: orderId,
+        status: mockState.status,
+        status_detail: mockState.status_detail,
+        type: 'point'
+      });
+    }
 
     const resMp = await fetch(`https://api.mercadopago.com/v1/orders/${encodeURIComponent(orderId)}`, {
       method: 'GET',

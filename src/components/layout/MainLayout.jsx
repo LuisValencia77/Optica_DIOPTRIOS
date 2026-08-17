@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { LayoutDashboard, Users, UserRoundCog, Package, Glasses, ListOrdered, FileClock, LogOut, Settings, Menu, X, PackageCheck } from 'lucide-react';
+import { LayoutDashboard, Users, UserRoundCog, Package, Glasses, ListOrdered, FileClock, LogOut, Settings, Menu, X, PackageCheck, ShoppingCart } from 'lucide-react';
 
 
 const MainLayout = ({ children }) => {
@@ -43,16 +43,16 @@ const MainLayout = ({ children }) => {
 
         <nav style={{ flex: 1, padding: '1rem 0', overflowY: 'auto' }}>
           <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-             <li>
+            <li>
               <NavLink to="/" onClick={closeSidebar} style={({ isActive }) => ({ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1.5rem', textDecoration: 'none', color: '#334155', backgroundColor: isActive ? '#f1f5f9' : 'transparent', fontWeight: isActive ? 'bold' : 'normal' })}>
                 <LayoutDashboard size={20} />
                 <span>Inicio</span>
               </NavLink>
             </li>
             <li>
-              <NavLink to="/inventario" onClick={closeSidebar} style={({ isActive }) => ({ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1.5rem', textDecoration: 'none', color: '#334155', backgroundColor: isActive ? '#f1f5f9' : 'transparent', fontWeight: isActive ? 'bold' : 'normal' })}>
-                <Package size={20} />
-                <span>Inventario</span>
+              <NavLink to="/ventas/nueva" onClick={closeSidebar} style={({ isActive }) => ({ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1.5rem', textDecoration: 'none', color: '#334155', backgroundColor: isActive ? '#f1f5f9' : 'transparent', fontWeight: isActive ? 'bold' : 'normal' })}>
+                <ShoppingCart size={20} />
+                <span>Punto de Venta</span>
               </NavLink>
             </li>
             <li>
@@ -62,27 +62,15 @@ const MainLayout = ({ children }) => {
               </NavLink>
             </li>
             <li>
-              <NavLink to="/examenes" onClick={closeSidebar} style={({ isActive }) => ({ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1.5rem', textDecoration: 'none', color: '#334155', backgroundColor: isActive ? '#f1f5f9' : 'transparent', fontWeight: isActive ? 'bold' : 'normal' })}>
-                <ListOrdered size={20} />
-                <span>Exámenes Visuales</span>
-              </NavLink>
-            </li>
-            <li>
-              <NavLink to="/ventas/nueva" onClick={closeSidebar} style={({ isActive }) => ({ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1.5rem', textDecoration: 'none', color: '#334155', backgroundColor: isActive ? '#f1f5f9' : 'transparent', fontWeight: isActive ? 'bold' : 'normal' })}>
-                <LayoutDashboard size={20} />
-                <span>Punto de Venta</span>
-              </NavLink>
-            </li>
-            <li>
-              <NavLink to="/pedidos" onClick={closeSidebar} style={({ isActive }) => ({ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1.5rem', textDecoration: 'none', color: '#334155', backgroundColor: isActive ? '#f1f5f9' : 'transparent', fontWeight: isActive ? 'bold' : 'normal' })}>
-                <PackageCheck size={20} />
-                <span>Pedidos Realizados</span>
+              <NavLink to="/inventario" onClick={closeSidebar} style={({ isActive }) => ({ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1.5rem', textDecoration: 'none', color: '#334155', backgroundColor: isActive ? '#f1f5f9' : 'transparent', fontWeight: isActive ? 'bold' : 'normal' })}>
+                <Package size={20} />
+                <span>Inventario</span>
               </NavLink>
             </li>
             <li>
               <NavLink to="/ventas/historial" onClick={closeSidebar} style={({ isActive }) => ({ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1.5rem', textDecoration: 'none', color: '#334155', backgroundColor: isActive ? '#f1f5f9' : 'transparent', fontWeight: isActive ? 'bold' : 'normal' })}>
                 <FileClock size={20} />
-                <span>Historial de Ventas</span>
+                <span>Historial y Pedidos</span>
               </NavLink>
             </li>
             {isManager && (

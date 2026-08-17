@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&display=swap');
+
 :root {
   --bg-color: #f8fafc;
   --text-color: #334155;
@@ -11,7 +13,7 @@
 body {
   margin: 0;
   padding: 0;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: 'Google Sans', system-ui, -apple-system, sans-serif;
   color: var(--text-color);
   background-color: var(--bg-color);
   overflow-x: hidden;

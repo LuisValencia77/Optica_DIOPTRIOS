@@ -26,7 +26,8 @@ export const generarPDFReceta = (examen, paciente) => {
       <meta charset="UTF-8" />
       <title>Receta Oftálmica - ${paciente ? `${paciente.nombre} ${paciente.apellidos || ''}`.trim() : 'Paciente'}</title>
       <style>
-        body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #1e293b; margin: 0; padding: 40px; background-color: #fff; }
+        @import url('https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&display=swap');
+        body { font-family: 'Google Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #1e293b; margin: 0; padding: 40px; background-color: #fff; }
         .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #2563eb; padding-bottom: 20px; margin-bottom: 30px; }
         .logo-title { font-size: 28px; font-weight: bold; color: #2563eb; letter-spacing: 1px; }
         .subtitle { font-size: 14px; color: #64748b; margin-top: 4px; }

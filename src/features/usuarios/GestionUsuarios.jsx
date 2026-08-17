@@ -9,6 +9,7 @@ const roleOptions = [
 const GestionUsuarios = () => {
   const { usuarios, crearUsuario, cambiarPassword, eliminarUsuario, user } = useAuth();
   const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [role, setRole] = useState('Empleado');
@@ -17,27 +18,28 @@ const GestionUsuarios = () => {
   const [editandoUsername, setEditandoUsername] = useState(null);
   const [nuevaPassword, setNuevaPassword] = useState('');
 
-  const handleCrear = (e) => {
+  const handleCrear = async (e) => {
     e.preventDefault();
-    if (!username || !password || !name) return;
+    if (!username || !password || !name || !email) return;
     
-    const exito = crearUsuario({ username, password, name, role });
+    const exito = await crearUsuario({ username, password, name, role, email });
     if (exito) {
-      setMensaje('Usuario creado exitosamente.');
-      setUsername(''); setPassword(''); setName(''); setRole('Empleado');
+      setMensaje('Usuario creado exitosamente. Se ha enviado un correo de verificación.');
+      setUsername(''); setPassword(''); setName(''); setRole('Empleado'); setEmail('');
       setTimeout(() => setMensaje(''), 3000);
     } else {
-      alert('El nombre de usuario ya existe.');
+      alert('El nombre de usuario ya existe o hubo un error.');
     }
   };
 
-  const handleCambiarPassword = (uname) => {
-    if (!nuevaPassword) return;
-    cambiarPassword(uname, nuevaPassword);
-    setMensaje(`Contraseña actualizada para ${uname}`);
-    setEditandoUsername(null);
-    setNuevaPassword('');
-    setTimeout(() => setMensaje(''), 3000);
+  const handleCambiarPassword = async (uname) => {
+    const exito = await cambiarPassword(uname);
+    if (exito) {
+      setMensaje(`Se ha enviado un correo a ${uname} para restablecer la contraseña.`);
+    } else {
+      alert(`Error al solicitar el cambio de contraseña para ${uname}.`);
+    }
+    setTimeout(() => setMensaje(''), 5000);
   };
 
   return (
@@ -53,6 +55,10 @@ const GestionUsuarios = () => {
             <div>
               <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '0.25rem' }}>Nombre Completo</label>
               <input type="text" value={name} onChange={e => setName(e.target.value)} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1' }} required />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '0.25rem' }}>Correo Electrónico</label>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1' }} required />
             </div>
             <div>
               <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '0.25rem' }}>Nombre de Usuario (Login)</label>
@@ -81,40 +87,38 @@ const GestionUsuarios = () => {
               <tr style={{ backgroundColor: '#f1f5f9', borderBottom: '2px solid #cbd5e1' }}>
                 <th style={{ padding: '0.75rem' }}>Nombre</th>
                 <th style={{ padding: '0.75rem' }}>Usuario</th>
+                <th style={{ padding: '0.75rem' }}>Correo</th>
                 <th style={{ padding: '0.75rem' }}>Rol</th>
+                <th style={{ padding: '0.75rem' }}>Estado</th>
                 <th style={{ padding: '0.75rem', textAlign: 'center' }}>Acciones</th>
               </tr>
             </thead>
             <tbody>
               {usuarios.map(u => (
-                <tr key={u.username} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                <tr key={u.id || u.username} style={{ borderBottom: '1px solid #e2e8f0' }}>
                   <td style={{ padding: '0.75rem' }}>{u.name}</td>
                   <td style={{ padding: '0.75rem', fontWeight: 'bold' }}>{u.username}</td>
+                  <td style={{ padding: '0.75rem', fontSize: '0.9rem', color: '#64748b' }}>{u.email}</td>
                   <td style={{ padding: '0.75rem' }}>
                     <span style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.8rem', backgroundColor: u.role.includes('Super') ? '#fef08a' : u.role === 'Administrador' ? '#bae6fd' : '#e0f2fe' }}>
                       {u.role}
                     </span>
                   </td>
+                  <td style={{ padding: '0.75rem' }}>
+                    <span style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.8rem', backgroundColor: u.is_verified ? '#dcfce7' : '#fee2e2', color: u.is_verified ? '#166534' : '#991b1b' }}>
+                      {u.is_verified ? 'Verificado' : 'Pendiente'}
+                    </span>
+                  </td>
                   <td style={{ padding: '0.75rem', textAlign: 'center' }}>
-                    {editandoUsername === u.username ? (
-                      <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
-                        <input type="password" placeholder="Nueva..." value={nuevaPassword} onChange={e => setNuevaPassword(e.target.value)} style={{ width: '80px', padding: '0.25rem' }} />
-                        <button onClick={() => handleCambiarPassword(u.username)} style={{ backgroundColor: '#16a34a', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>✓</button>
-                        <button onClick={() => setEditandoUsername(null)} style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>✕</button>
-                      </div>
-                    ) : (
-                      <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
-                        {/* No se puede editar a sí mismo ni a otro super usuario si no es super usuario */}
-                        {!(user.role !== 'Super Usuario' && u.role === 'Super Usuario') && (
-                           <>
-                             <button onClick={() => setEditandoUsername(u.username)} style={{ padding: '0.25rem 0.5rem', backgroundColor: '#e2e8f0', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem' }}>🔑 Clave</button>
-                             {u.username !== user.username && (
-                               <button onClick={() => { if(window.confirm('¿Seguro que desea eliminar a este usuario?')) eliminarUsuario(u.username); }} style={{ padding: '0.25rem 0.5rem', backgroundColor: '#fee2e2', color: '#991b1b', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem' }}>Borrar</button>
-                             )}
-                           </>
-                        )}
-                      </div>
-                    )}
+                    <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
+                      {(user?.role === 'Super Usuario' || u.id === user?.id) && (
+                        <button onClick={() => handleCambiarPassword(u.username)} style={{ padding: '0.25rem 0.5rem', backgroundColor: '#e2e8f0', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem' }}>🔑 Restablecer Clave</button>
+                      )}
+                      
+                      {user?.role === 'Super Usuario' && u.id !== user.id && (
+                        <button onClick={() => { if(window.confirm('¿Seguro que desea eliminar a este usuario?')) eliminarUsuario(u.id); }} style={{ padding: '0.25rem 0.5rem', backgroundColor: '#fee2e2', color: '#991b1b', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem' }}>Borrar</button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

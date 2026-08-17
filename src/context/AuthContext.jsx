@@ -16,6 +16,24 @@ export const AuthProvider = ({ children }) => {
     }
   });
 
+  const [usuarios, setUsuarios] = useState([]);
+
+  const cargarUsuarios = async () => {
+    try {
+      const res = await fetch('http://localhost:4000/api/usuarios');
+      if (res.ok) {
+        const data = await res.json();
+        setUsuarios(data);
+      }
+    } catch (error) {
+      console.error('Error cargando usuarios:', error);
+    }
+  };
+
+  useEffect(() => {
+    cargarUsuarios();
+  }, []);
+
   useEffect(() => {
     if (user) {
       window.sessionStorage.setItem('opticaUser', JSON.stringify(user));
@@ -72,17 +90,59 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
   };
 
-  const crearUsuario = (nuevoUsuario) => {
-    // Actualmente solo se permite el manejo local de roles.
-    return false;
+  const crearUsuario = async (nuevoUsuario) => {
+    try {
+      const response = await fetch('http://localhost:4000/api/usuarios', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(nuevoUsuario)
+      });
+      if (response.ok) {
+        await cargarUsuarios();
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Error creando usuario:', error);
+      return false;
+    }
   };
 
-  const cambiarPassword = (username, nuevaPassword) => {
-    console.warn('Cambio de contraseña no implementado en backend todavía');
+  const cambiarPassword = async (usernameOrEmail) => {
+    try {
+      const response = await fetch('http://localhost:4000/api/usuarios/solicitar-reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ usernameOrEmail })
+      });
+      return response.ok;
+    } catch (error) {
+      console.error('Error solicitando cambio de contraseña:', error);
+      return false;
+    }
   };
 
-  const eliminarUsuario = (username) => {
-    console.warn('Eliminación de usuario no implementada en backend todavía');
+  const eliminarUsuario = async (id) => {
+    try {
+      const response = await fetch(`http://localhost:4000/api/usuarios/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'x-caller-id': user?.id,
+          'x-caller-role': user?.role
+        }
+      });
+      if (response.ok) {
+        await cargarUsuarios();
+        return true;
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Error al eliminar usuario');
+        return false;
+      }
+    } catch (error) {
+      console.error('Error eliminando usuario:', error);
+      return false;
+    }
   };
 
   const isManager = user?.role === 'Super Usuario' || user?.role === 'Administrador';
@@ -92,7 +152,7 @@ export const AuthProvider = ({ children }) => {
       user,
       login,
       logout,
-      usuarios: [],
+      usuarios,
       crearUsuario,
       cambiarPassword,
       eliminarUsuario,
