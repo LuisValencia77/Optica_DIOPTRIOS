@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: optica-db
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER:-admin_dioptrios}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-dioptrios12}
+      POSTGRES_DB: ${DB_NAME:-dioptrios}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: optica-backend
+    restart: always
+    depends_on:
+      - db
+    environment:
+      - DB_HOST=db
+      - DB_USER=${DB_USER:-admin_dioptrios}
+      - DB_PASSWORD=${DB_PASSWORD:-dioptrios12}
+      - DB_NAME=${DB_NAME:-dioptrios}
+      - DB_PORT=5432
+      - PORT=4000
+      - GMAIL_USER=${GMAIL_USER}
+      - GMAIL_APP_PASSWORD=${GMAIL_APP_PASSWORD}
+      - VITE_MERCADOPAGO_PUBLIC_KEY=${VITE_MERCADOPAGO_PUBLIC_KEY}
+      - MERCADOPAGO_PUBLIC_KEY=${MERCADOPAGO_PUBLIC_KEY}
+      - MERCADOPAGO_ACCESS_TOKEN=${MERCADOPAGO_ACCESS_TOKEN}
+      - MERCADOPAGO_TEST_SELLER_USER=${MERCADOPAGO_TEST_SELLER_USER}
+      - MERCADOPAGO_TEST_SELLER_PASS=${MERCADOPAGO_TEST_SELLER_PASS}
+      - MERCADOPAGO_TEST_BUYER_USER=${MERCADOPAGO_TEST_BUYER_USER}
+      - MERCADOPAGO_TEST_BUYER_PASS=${MERCADOPAGO_TEST_BUYER_PASS}
+      - R2_ENDPOINT=${R2_ENDPOINT}
+      - R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID}
+      - R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY}
+      - R2_BUCKET_NAME=${R2_BUCKET_NAME}
+      - R2_PUBLIC_URL=${R2_PUBLIC_URL}
+    ports:
+      - "4000:4000"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: optica-frontend
+    restart: always
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+
+volumes:
+  pgdata:

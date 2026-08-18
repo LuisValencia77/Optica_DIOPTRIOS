@@ -16,7 +16,7 @@ const VerificarCorreo = () => {
         return;
       }
       try {
-        const response = await fetch(`http://localhost:4000/api/usuarios/verify/${token}`);
+        const response = await fetch(`/api/usuarios/verify/${token}`);
         const data = await response.json();
         if (response.ok) {
           setMensaje('¡Cuenta verificada exitosamente! Ya puedes iniciar sesión.');

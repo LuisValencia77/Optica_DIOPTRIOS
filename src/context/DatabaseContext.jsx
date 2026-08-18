@@ -100,20 +100,28 @@ export const DatabaseProvider = ({ children }) => {
   // --- SECCIÓN DE INYECCIÓN DE DATOS --- //
 
   const subirImagen = async (archivo) => {
-    return new Promise((resolve, reject) => {
-      if (!archivo) {
-        resolve(null);
-        return;
+    if (!archivo) return null;
+
+    const formData = new FormData();
+    formData.append('imagen', archivo);
+
+    try {
+      const respuesta = await fetch(`${API_URL}/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!respuesta.ok) {
+        throw new Error('Error en el servidor al subir imagen');
       }
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result); // Retorna la cadena Base64
-      reader.onerror = (error) => {
-        console.error(' Error convirtiendo imagen a Base64:', error);
-        alert('No se pudo procesar la imagen.');
-        reject(error);
-      };
-      reader.readAsDataURL(archivo);
-    });
+
+      const datos = await respuesta.json();
+      return datos.url; // Retorna la URL pública de la imagen
+    } catch (error) {
+      console.error('Error subiendo imagen al servidor:', error);
+      alert('No se pudo subir la imagen.');
+      return null;
+    }
   };
 
   const agregarProducto = async (producto) => {

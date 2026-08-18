@@ -27,7 +27,7 @@ const ResetPassword = () => {
 
     setCargando(true);
     try {
-      const response = await fetch('http://localhost:4000/api/usuarios/reset-password', {
+      const response = await fetch('/api/usuarios/reset-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token, newPassword: password })

@@ -20,7 +20,7 @@ export const AuthProvider = ({ children }) => {
 
   const cargarUsuarios = async () => {
     try {
-      const res = await fetch('http://localhost:4000/api/usuarios');
+      const res = await fetch('/api/usuarios');
       if (res.ok) {
         const data = await res.json();
         setUsuarios(data);
@@ -58,7 +58,7 @@ export const AuthProvider = ({ children }) => {
     };
 
     try {
-      const response = await fetch('http://localhost:4000/api/auth/login', {
+      const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
@@ -92,7 +92,7 @@ export const AuthProvider = ({ children }) => {
 
   const crearUsuario = async (nuevoUsuario) => {
     try {
-      const response = await fetch('http://localhost:4000/api/usuarios', {
+      const response = await fetch('/api/usuarios', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(nuevoUsuario)
@@ -110,7 +110,7 @@ export const AuthProvider = ({ children }) => {
 
   const cambiarPassword = async (usernameOrEmail) => {
     try {
-      const response = await fetch('http://localhost:4000/api/usuarios/solicitar-reset', {
+      const response = await fetch('/api/usuarios/solicitar-reset', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ usernameOrEmail })
@@ -124,7 +124,7 @@ export const AuthProvider = ({ children }) => {
 
   const eliminarUsuario = async (id) => {
     try {
-      const response = await fetch(`http://localhost:4000/api/usuarios/${id}`, {
+      const response = await fetch(`/api/usuarios/${id}`, {
         method: 'DELETE',
         headers: {
           'x-caller-id': user?.id,

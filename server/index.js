@@ -10,6 +10,9 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+import multer from 'multer';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+
 dotenv.config();
 
 // Servidor
@@ -19,16 +22,31 @@ const puerto = process.env.PORT || 4000;
 aplicacion.use(cors({ origin: true }));
 aplicacion.use(express.json({ limit: '10mb' }));
 
+// Configuración S3 (Cloudflare R2)
+const s3Client = new S3Client({
+  region: 'auto',
+  endpoint: process.env.R2_ENDPOINT,
+  credentials: {
+    accessKeyId: process.env.R2_ACCESS_KEY_ID,
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+  },
+});
+const upload = multer({ storage: multer.memoryStorage() });
+
 // Memoria para Modo Simulación (Testing UI sin terminal física)
 const mockOrderStates = new Map();
 // Base de datos
-const conexionBd = new Pool({
-  host: process.env.DB_HOST || '192.168.1.73',
-  user: process.env.DB_USER || 'admin_dioptrios',
-  password: process.env.DB_PASSWORD || 'dioptrios12',
-  database: process.env.DB_NAME || 'dioptrios',
-  port: process.env.DB_PORT || 5432,
-});
+const conexionBd = new Pool(
+  process.env.DATABASE_URL 
+    ? { connectionString: process.env.DATABASE_URL }
+    : {
+        host: process.env.DB_HOST || '192.168.1.73',
+        user: process.env.DB_USER || 'admin_dioptrios',
+        password: process.env.DB_PASSWORD || 'dioptrios12',
+        database: process.env.DB_NAME || 'dioptrios',
+        port: process.env.DB_PORT || 5432,
+      }
+);
 
 // Estructura
 const inicializarTablas = async () => {
@@ -181,6 +199,34 @@ const inicializarTablas = async () => {
     console.error(' Fallo al construir tablas:', error);
   }
 };
+
+// Endpoint de subida de imágenes (R2)
+aplicacion.post('/api/upload', upload.single('imagen'), async (peticion, respuesta) => {
+  if (!peticion.file) {
+    return respuesta.status(400).json({ error: 'No se subió ninguna imagen' });
+  }
+
+  const file = peticion.file;
+  const fileName = `${uuidv4()}-${file.originalname.replace(/\s+/g, '-')}`;
+  const bucketName = process.env.R2_BUCKET_NAME;
+
+  try {
+    const command = new PutObjectCommand({
+      Bucket: bucketName,
+      Key: fileName,
+      Body: file.buffer,
+      ContentType: file.mimetype,
+    });
+
+    await s3Client.send(command);
+
+    const publicUrl = `${process.env.R2_PUBLIC_URL}/${fileName}`;
+    respuesta.json({ url: publicUrl });
+  } catch (error) {
+    console.error('Error subiendo imagen a R2:', error);
+    respuesta.status(500).json({ error: 'Error interno subiendo la imagen' });
+  }
+});
 
 // Rutas usuarios
 aplicacion.get('/api/usuarios', async (peticion, respuesta) => {
