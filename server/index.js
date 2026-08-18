@@ -96,28 +96,44 @@ const inicializarTablas = async () => {
         FOREIGN KEY (id_producto) REFERENCES cristales(id_producto) ON DELETE CASCADE,
         FOREIGN KEY (id_tratamiento) REFERENCES tratamientos_cristal(id_tratamiento) ON DELETE CASCADE
       );
+    `);
+    
+    await conexionBd.query(`
       CREATE TABLE IF NOT EXISTS pacientes (
         id BIGINT PRIMARY KEY,
         nombre VARCHAR(255) NOT NULL,
         apellidos VARCHAR(255) DEFAULT '',
         telefono VARCHAR(64) NOT NULL,
         correo VARCHAR(255) NOT NULL,
-        fechaNacimiento DATE NOT NULL,
-        peso VARCHAR(16),
-        estatura VARCHAR(16),
+        fechaNacimiento VARCHAR(64),
         historialClinico TEXT,
         direccion VARCHAR(512)
       );
+    `);
+    
+    // Eliminar columnas que ya no se usan (peso y estatura)
+    await conexionBd.query(`ALTER TABLE pacientes DROP COLUMN IF EXISTS peso;`);
+    await conexionBd.query(`ALTER TABLE pacientes DROP COLUMN IF EXISTS estatura;`);
+
+    await conexionBd.query(`
       CREATE TABLE IF NOT EXISTS examenes (
         id BIGINT PRIMARY KEY,
         pacienteId BIGINT NOT NULL,
         od TEXT,
         oi TEXT,
+        adicion VARCHAR(64),
+        dp VARCHAR(64),
+        ap VARCHAR(64),
         tipoArmazon VARCHAR(255),
         tratamientoLentes VARCHAR(255),
+        doctor VARCHAR(255),
         fecha TIMESTAMP NOT NULL,
         FOREIGN KEY (pacienteId) REFERENCES pacientes(id) ON DELETE CASCADE
       );
+      
+      -- Agregar columna doctor si no existe
+      ALTER TABLE examenes ADD COLUMN IF NOT EXISTS doctor VARCHAR(255);
+
       CREATE TABLE IF NOT EXISTS pedidos (
         id BIGINT PRIMARY KEY,
         examenId BIGINT,
@@ -160,9 +176,9 @@ const inicializarTablas = async () => {
     await conexionBd.query(`ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS verification_token VARCHAR(255);`);
     await conexionBd.query(`ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS reset_token VARCHAR(255);`);
 
-    console.log('✅ Tablas verificadas en PostgreSQL.');
+    console.log(' Tablas verificadas en PostgreSQL.');
   } catch (error) {
-    console.error('❌ Fallo al construir tablas:', error);
+    console.error(' Fallo al construir tablas:', error);
   }
 };
 
@@ -322,17 +338,17 @@ aplicacion.get('/api/pacientes', async (peticion, respuesta) => {
 
 aplicacion.post('/api/pacientes', async (peticion, respuesta) => {
   try {
-    const { id, nombre, apellidos, telefono, correo, fechaNacimiento, peso, estatura, historialClinico, direccion } = peticion.body;
+    const { id, nombre, apellidos, telefono, correo, fechaNacimiento, historialClinico, direccion } = peticion.body;
     const consulta = `
-      INSERT INTO pacientes (id, nombre, apellidos, telefono, correo, fechaNacimiento, peso, estatura, historialClinico, direccion)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      INSERT INTO pacientes (id, nombre, apellidos, telefono, correo, fechaNacimiento, historialClinico, direccion)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING *;
     `;
-    const valores = [id, nombre, apellidos, telefono, correo, fechaNacimiento, peso, estatura, historialClinico, direccion];
+    const valores = [id, nombre, apellidos, telefono, correo, fechaNacimiento, historialClinico, direccion];
     const { rows: filas } = await conexionBd.query(consulta, valores);
     respuesta.status(201).json(filas[0]);
   } catch (error) {
-    console.error('❌ Error guardando paciente:', error.message);
+    console.error(' Error guardando paciente:', error.message);
     respuesta.status(500).json({ error: error.message });
   }
 });
@@ -411,7 +427,7 @@ aplicacion.post('/api/productos', async (peticion, respuesta) => {
     respuesta.status(201).json({ ...prodRes.rows[0], ...especificos });
   } catch (error) {
     await cliente.query('ROLLBACK');
-    console.error('❌ Error guardando producto:', error.message);
+    console.error(' Error guardando producto:', error.message);
     respuesta.status(500).json({ error: error.message });
   } finally {
     cliente.release();
@@ -457,7 +473,7 @@ aplicacion.put('/api/productos/:id', async (peticion, respuesta) => {
     respuesta.json({ ...prodRes.rows[0], ...especificos });
   } catch (error) {
     await cliente.query('ROLLBACK');
-    console.error('❌ Error actualizando producto:', error.message);
+    console.error(' Error actualizando producto:', error.message);
     respuesta.status(500).json({ error: error.message });
   } finally {
     cliente.release();
@@ -525,7 +541,7 @@ aplicacion.post('/api/ventas', async (peticion, respuesta) => {
     const { rows: filas } = await conexionBd.query(consulta, valores);
     respuesta.status(201).json(filas[0]);
   } catch (error) {
-    console.error('❌ Error guardando venta:', error.message);
+    console.error(' Error guardando venta:', error.message);
     respuesta.status(500).json({ error: error.message });
   }
 });
@@ -556,7 +572,7 @@ aplicacion.get('/api/ventas/corte-caja', async (peticion, respuesta) => {
     
     respuesta.json({ fecha: targetDate, totalVentas, totalBruto, totalCobrado, totalPendiente, totalDescuentos, porMetodo, ventas: ventasDelDia });
   } catch (error) {
-    console.error('❌ Error en corte de caja:', error);
+    console.error(' Error en corte de caja:', error);
     respuesta.status(500).json({ error: error.message });
   }
 });
@@ -573,17 +589,17 @@ aplicacion.get('/api/examenes', async (peticion, respuesta) => {
 
 aplicacion.post('/api/examenes', async (peticion, respuesta) => {
   try {
-    const { id, pacienteId, od, oi, tipoArmazon, tratamientoLentes, fecha } = peticion.body;
+    const { id, pacienteId, od, oi, adicion, dp, ap, tipoArmazon, tratamientoLentes, doctor, fecha } = peticion.body;
     const consulta = `
-      INSERT INTO examenes (id, pacienteId, od, oi, tipoArmazon, tratamientoLentes, fecha) 
-      VALUES ($1, $2, $3, $4, $5, $6, $7) 
+      INSERT INTO examenes (id, pacienteId, od, oi, adicion, dp, ap, tipoArmazon, tratamientoLentes, doctor, fecha) 
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) 
       RETURNING *;
     `;
-    const valores = [id, pacienteId, JSON.stringify(od), JSON.stringify(oi), tipoArmazon, tratamientoLentes, fecha];
+    const valores = [id, pacienteId, JSON.stringify(od), JSON.stringify(oi), adicion, dp, ap, tipoArmazon, tratamientoLentes, doctor, fecha];
     const { rows: filas } = await conexionBd.query(consulta, valores);
     respuesta.status(201).json(filas[0]);
   } catch (error) {
-    console.error('❌ Error guardando examen:', error.message);
+    console.error(' Error guardando examen:', error.message);
     respuesta.status(500).json({ error: error.message });
   }
 });
@@ -591,14 +607,13 @@ aplicacion.post('/api/examenes', async (peticion, respuesta) => {
 aplicacion.put('/api/examenes/:id', async (peticion, respuesta) => {
   try {
     const { id } = peticion.params;
-    const { pacienteId, od, oi, tipoArmazon, tratamientoLentes } = peticion.body;
+    const { od, oi, adicion, dp, ap, tipoArmazon, tratamientoLentes, doctor } = peticion.body;
     const consulta = `
       UPDATE examenes 
-      SET pacienteId = $1, od = $2, oi = $3, tipoArmazon = $4, tratamientoLentes = $5
-      WHERE id = $6
-      RETURNING *;
+      SET od = $1, oi = $2, adicion = $3, dp = $4, ap = $5, tipoArmazon = $6, tratamientoLentes = $7, doctor = $8
+      WHERE id = $9 RETURNING *;
     `;
-    const valores = [pacienteId, JSON.stringify(od), JSON.stringify(oi), tipoArmazon, tratamientoLentes, id];
+    const valores = [JSON.stringify(od), JSON.stringify(oi), adicion, dp, ap, tipoArmazon, tratamientoLentes, doctor, id];
     const { rows: filas } = await conexionBd.query(consulta, valores);
     
     if (filas.length === 0) {
@@ -607,7 +622,7 @@ aplicacion.put('/api/examenes/:id', async (peticion, respuesta) => {
     
     respuesta.json(filas[0]);
   } catch (error) {
-    console.error('❌ Error actualizando examen:', error.message);
+    console.error(' Error actualizando examen:', error.message);
     respuesta.status(500).json({ error: error.message });
   }
 });
@@ -624,7 +639,7 @@ aplicacion.delete('/api/examenes/:id', async (peticion, respuesta) => {
     
     respuesta.json({ mensaje: 'Examen eliminado correctamente' });
   } catch (error) {
-    console.error('❌ Error eliminando examen:', error.message);
+    console.error(' Error eliminando examen:', error.message);
     respuesta.status(500).json({ error: error.message });
   }
 });
@@ -682,7 +697,7 @@ aplicacion.post('/api/pedidos', async (peticion, respuesta) => {
     const { rows: filas } = await conexionBd.query(consulta, valores);
     respuesta.status(201).json(filas[0]);
   } catch (error) {
-    console.error('❌ Error guardando pedido:', error.message);
+    console.error(' Error guardando pedido:', error.message);
     respuesta.status(500).json({ error: error.message });
   }
 });
@@ -700,7 +715,7 @@ aplicacion.put('/api/pedidos/:id/estado', async (peticion, respuesta) => {
     }
     respuesta.json(filas[0]);
   } catch (error) {
-    console.error('❌ Error actualizando estado de pedido:', error.message);
+    console.error(' Error actualizando estado de pedido:', error.message);
     respuesta.status(500).json({ error: error.message });
   }
 });
@@ -721,7 +736,7 @@ aplicacion.post('/api/pedidos/enviar-correo-confirmacion', async (peticion, resp
         const precio = Number(item.precio || 0);
         let recetaHtml = '';
         if (item.receta && item.receta.nombre) {
-          recetaHtml += `<div style="font-size: 12px; color: #1e293b; margin-top: 4px;"><strong>👤 Para:</strong> ${item.receta.nombre}</div>`;
+          recetaHtml += `<div style="font-size: 12px; color: #1e293b; margin-top: 4px;"><strong> Para:</strong> ${item.receta.nombre}</div>`;
           if (JSON.stringify(item.receta.od) === JSON.stringify(item.receta.oi)) {
             recetaHtml += `<div style="font-size: 11px; color: #64748b;">Ambos Ojos: Esf ${item.receta.od?.esfera} Cil ${item.receta.od?.cilindro} Eje ${item.receta.od?.eje}</div>`;
           } else {
@@ -803,7 +818,7 @@ aplicacion.post('/api/pedidos/enviar-correo-confirmacion', async (peticion, resp
 
     respuesta.json({ status: 'ok', mensaje: 'Correo enviado exitosamente' });
   } catch (error) {
-    console.error('❌ Error enviando correo de confirmación:', error);
+    console.error(' Error enviando correo de confirmación:', error);
     respuesta.status(500).json({ error: error.message });
   }
 });
@@ -823,7 +838,7 @@ aplicacion.post('/api/pedidos/notificar-listo', async (peticion, respuesta) => {
       <style>@import url('https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&display=swap');</style>
       <div style="font-family: 'Google Sans', Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
         <div style="background-color: #16a34a; color: white; padding: 20px; text-align: center;">
-          <h1 style="margin: 0; font-size: 24px;">¡Tu Pedido está Listo! 🎉</h1>
+          <h1 style="margin: 0; font-size: 24px;">¡Tu Pedido está Listo! </h1>
         </div>
         <div style="padding: 20px;">
           <p>Estimado(a) <strong>${nombreCliente || 'Cliente'}</strong>,</p>
@@ -832,7 +847,7 @@ aplicacion.post('/api/pedidos/notificar-listo', async (peticion, respuesta) => {
           ${itemsList ? `<h3 style="color: #1e293b;">Resumen del Pedido:</h3><ul>${itemsList}</ul>` : ''}
 
           <div style="background-color: #f0fdf4; border-left: 4px solid #16a34a; padding: 15px; margin: 20px 0; border-radius: 4px;">
-            <p style="margin: 0; font-weight: bold; color: #166534;">📍 Sucursal: Centro</p>
+            <p style="margin: 0; font-weight: bold; color: #166534;"> Sucursal: Centro</p>
             <p style="margin: 5px 0 0 0; color: #15803d; font-size: 14px;">Puedes pasar por tu producto en nuestros horarios habituales de atención.</p>
           </div>
 
@@ -852,7 +867,7 @@ aplicacion.post('/api/pedidos/notificar-listo', async (peticion, respuesta) => {
 
     respuesta.json({ status: 'ok', mensaje: 'Notificación enviada correctamente al correo del paciente' });
   } catch (error) {
-    console.error('❌ Error notificando pedido listo:', error);
+    console.error(' Error notificando pedido listo:', error);
     respuesta.status(500).json({ error: error.message });
   }
 });
@@ -890,7 +905,30 @@ aplicacion.patch('/api/ventas/:id/abono', async (peticion, respuesta) => {
 
     respuesta.json(updatedRows[0]);
   } catch (error) {
-    console.error('❌ Error registrando abono:', error);
+    console.error(' Error registrando abono:', error);
+    respuesta.status(500).json({ error: error.message });
+  }
+});
+
+// Marcar lentes terminados
+aplicacion.put('/api/ventas/:id/lentes-terminados', async (peticion, respuesta) => {
+  try {
+    const { id } = peticion.params;
+
+    const updateQuery = `
+      UPDATE ventas
+      SET lentesTerminados = true, motivoNoTerminado = ''
+      WHERE id = $1
+      RETURNING *;
+    `;
+    const { rows: updatedRows } = await conexionBd.query(updateQuery, [id]);
+    if (updatedRows.length === 0) {
+      return respuesta.status(404).json({ error: 'Venta no encontrada' });
+    }
+
+    respuesta.json(updatedRows[0]);
+  } catch (error) {
+    console.error(' Error marcando lentes como terminados:', error);
     respuesta.status(500).json({ error: error.message });
   }
 });
@@ -918,7 +956,7 @@ aplicacion.patch('/api/ventas/:id/estado', async (peticion, respuesta) => {
 
     respuesta.json(updatedRows[0]);
   } catch (error) {
-    console.error('❌ Error cambiando estado de venta:', error);
+    console.error(' Error cambiando estado de venta:', error);
     respuesta.status(500).json({ error: error.message });
   }
 });
@@ -938,7 +976,7 @@ aplicacion.post('/api/mercadopago/crear-orden', async (peticion, respuesta) => {
     
     // MODO SIMULACIÓN PARA UI SIN TERMINAL FÍSICA
     if (true) {
-      console.log('🔹 [MOCK] Creando orden simulada para UI');
+      console.log(' [MOCK] Creando orden simulada para UI');
       const mockId = `ORD${Date.now()}TEST`;
       mockOrderStates.set(mockId, { status: 'opened', status_detail: 'opened' });
       return respuesta.json({
@@ -973,13 +1011,13 @@ aplicacion.post('/api/mercadopago/crear-orden', async (peticion, respuesta) => {
 
     const dataMp = await resMp.json();
     if (!resMp.ok) {
-      console.error('❌ Error creando orden MP:', dataMp);
+      console.error(' Error creando orden MP:', dataMp);
       return respuesta.status(resMp.status).json(dataMp);
     }
 
     respuesta.json(dataMp);
   } catch (error) {
-    console.error('❌ Error en /api/mercadopago/crear-orden:', error);
+    console.error(' Error en /api/mercadopago/crear-orden:', error);
     respuesta.status(500).json({ error: error.message });
   }
 });
@@ -1018,7 +1056,7 @@ aplicacion.post('/api/mercadopago/simular-evento', async (peticion, respuesta) =
 
     // MODO SIMULACIÓN PARA UI SIN TERMINAL FÍSICA
     if (order_id.includes('TEST')) {
-      console.log(`🔹 [MOCK] Simulando evento ${payload.status} para orden ${order_id}`);
+      console.log(` [MOCK] Simulando evento ${payload.status} para orden ${order_id}`);
       mockOrderStates.set(order_id, { status: payload.status, status_detail: payload.status_detail || payload.status });
       return respuesta.json({
         action: `order.${payload.status}`,
@@ -1041,13 +1079,13 @@ aplicacion.post('/api/mercadopago/simular-evento', async (peticion, respuesta) =
 
     const dataMp = await resMp.json();
     if (!resMp.ok) {
-      console.error('❌ Error simulando evento MP:', dataMp);
+      console.error(' Error simulando evento MP:', dataMp);
       return respuesta.status(resMp.status).json(dataMp);
     }
 
     respuesta.json(dataMp);
   } catch (error) {
-    console.error('❌ Error en /api/mercadopago/simular-evento:', error);
+    console.error(' Error en /api/mercadopago/simular-evento:', error);
     respuesta.status(500).json({ error: error.message });
   }
 });
@@ -1063,7 +1101,7 @@ aplicacion.get('/api/mercadopago/obtener-orden/:orderId', async (peticion, respu
 
     // MODO SIMULACIÓN PARA UI SIN TERMINAL FÍSICA
     if (orderId.includes('TEST')) {
-      console.log(`🔹 [MOCK] Consultando estado simulado de orden ${orderId}`);
+      console.log(` [MOCK] Consultando estado simulado de orden ${orderId}`);
       const mockState = mockOrderStates.get(orderId) || { status: 'processed', status_detail: 'accredited' };
       return respuesta.json({
         id: orderId,
@@ -1082,13 +1120,13 @@ aplicacion.get('/api/mercadopago/obtener-orden/:orderId', async (peticion, respu
 
     const dataMp = await resMp.json();
     if (!resMp.ok) {
-      console.error('❌ Error obteniendo orden MP:', dataMp);
+      console.error(' Error obteniendo orden MP:', dataMp);
       return respuesta.status(resMp.status).json(dataMp);
     }
 
     respuesta.json(dataMp);
   } catch (error) {
-    console.error('❌ Error en /api/mercadopago/obtener-orden:', error);
+    console.error(' Error en /api/mercadopago/obtener-orden:', error);
     respuesta.status(500).json({ error: error.message });
   }
 });
@@ -1101,5 +1139,5 @@ aplicacion.get('*', (req, res) => {
 // Arranque
 aplicacion.listen(puerto, async () => {
   await inicializarTablas();
-  console.log(`🚀 Backend operativo en el puerto ${puerto}`);
+  console.log(` Backend operativo en el puerto ${puerto}`);
 });

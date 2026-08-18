@@ -1,12 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 
 const FormularioExamen = ({ onGuardar, onCancelar, pacienteId, title = "Registrar Nuevo Examen Visual" }) => {
+  const { user } = useAuth();
+  
   const [formExamen, setFormExamen] = useState({
     pacienteId: pacienteId || '',
-    od: { esfera: '', cilindro: '', eje: '', adicion: '', agudeza: '' },
-    oi: { esfera: '', cilindro: '', eje: '', adicion: '', agudeza: '' },
-    tipoArmazon: '', tratamientoLentes: ''
+    od: { esfera: '', cilindro: '', eje: '' },
+    oi: { esfera: '', cilindro: '', eje: '' },
+    adicion: '', dp: '', ap: '',
+    tipoArmazon: '', tratamientoLentes: '',
+    doctor: user?.name || user?.username || ''
   });
 
   useEffect(() => {
@@ -17,7 +22,7 @@ const FormularioExamen = ({ onGuardar, onCancelar, pacienteId, title = "Registra
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    onGuardar(formExamen);
+    onGuardar({ ...formExamen, doctor: user?.name || user?.username || '' });
   };
 
   return (
@@ -37,9 +42,7 @@ const FormularioExamen = ({ onGuardar, onCancelar, pacienteId, title = "Registra
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
                 <div><label style={{ display: 'block', fontSize: '0.8rem' }}>Esfera</label><input type="number" step="0.25" value={formExamen.od.esfera} onChange={e => setFormExamen({...formExamen, od: {...formExamen.od, esfera: e.target.value}})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1' }} /></div>
                 <div><label style={{ display: 'block', fontSize: '0.8rem' }}>Cilindro</label><input type="number" step="0.25" value={formExamen.od.cilindro} onChange={e => setFormExamen({...formExamen, od: {...formExamen.od, cilindro: e.target.value}})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1' }} /></div>
-                <div><label style={{ display: 'block', fontSize: '0.8rem' }}>Eje</label><input type="number" min="0" max="180" value={formExamen.od.eje} onChange={e => setFormExamen({...formExamen, od: {...formExamen.od, eje: e.target.value}})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1' }} /></div>
-                <div><label style={{ display: 'block', fontSize: '0.8rem' }}>Adición</label><input type="number" step="0.25" value={formExamen.od.adicion} onChange={e => setFormExamen({...formExamen, od: {...formExamen.od, adicion: e.target.value}})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1' }} /></div>
-                <div style={{ gridColumn: 'span 2' }}><label style={{ display: 'block', fontSize: '0.8rem' }}>Agudeza</label><input type="text" value={formExamen.od.agudeza} onChange={e => setFormExamen({...formExamen, od: {...formExamen.od, agudeza: e.target.value}})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1' }} /></div>
+                <div style={{ gridColumn: 'span 2' }}><label style={{ display: 'block', fontSize: '0.8rem' }}>Eje</label><input type="number" min="0" max="180" value={formExamen.od.eje} onChange={e => setFormExamen({...formExamen, od: {...formExamen.od, eje: e.target.value}})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1' }} /></div>
               </div>
             </div>
 
@@ -49,11 +52,16 @@ const FormularioExamen = ({ onGuardar, onCancelar, pacienteId, title = "Registra
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
                 <div><label style={{ display: 'block', fontSize: '0.8rem' }}>Esfera</label><input type="number" step="0.25" value={formExamen.oi.esfera} onChange={e => setFormExamen({...formExamen, oi: {...formExamen.oi, esfera: e.target.value}})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1' }} /></div>
                 <div><label style={{ display: 'block', fontSize: '0.8rem' }}>Cilindro</label><input type="number" step="0.25" value={formExamen.oi.cilindro} onChange={e => setFormExamen({...formExamen, oi: {...formExamen.oi, cilindro: e.target.value}})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1' }} /></div>
-                <div><label style={{ display: 'block', fontSize: '0.8rem' }}>Eje</label><input type="number" min="0" max="180" value={formExamen.oi.eje} onChange={e => setFormExamen({...formExamen, oi: {...formExamen.oi, eje: e.target.value}})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1' }} /></div>
-                <div><label style={{ display: 'block', fontSize: '0.8rem' }}>Adición</label><input type="number" step="0.25" value={formExamen.oi.adicion} onChange={e => setFormExamen({...formExamen, oi: {...formExamen.oi, adicion: e.target.value}})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1' }} /></div>
-                <div style={{ gridColumn: 'span 2' }}><label style={{ display: 'block', fontSize: '0.8rem' }}>Agudeza</label><input type="text" value={formExamen.oi.agudeza} onChange={e => setFormExamen({...formExamen, oi: {...formExamen.oi, agudeza: e.target.value}})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1' }} /></div>
+                <div style={{ gridColumn: 'span 2' }}><label style={{ display: 'block', fontSize: '0.8rem' }}>Eje</label><input type="number" min="0" max="180" value={formExamen.oi.eje} onChange={e => setFormExamen({...formExamen, oi: {...formExamen.oi, eje: e.target.value}})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1' }} /></div>
               </div>
             </div>
+          </div>
+
+          {/* Nuevos Campos Globales */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1.5rem', backgroundColor: '#f8fafc', padding: '1rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+            <div><label style={{ display: 'block', fontSize: '0.9rem', fontWeight: 'bold', color: '#334155', marginBottom: '0.5rem' }}>Adición</label><input type="number" step="0.25" value={formExamen.adicion} onChange={e => setFormExamen({...formExamen, adicion: e.target.value})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1' }} /></div>
+            <div><label style={{ display: 'block', fontSize: '0.9rem', fontWeight: 'bold', color: '#334155', marginBottom: '0.5rem' }}>Distancia Interpupilar (DP)</label><input type="text" value={formExamen.dp} onChange={e => setFormExamen({...formExamen, dp: e.target.value})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1' }} /></div>
+            <div><label style={{ display: 'block', fontSize: '0.9rem', fontWeight: 'bold', color: '#334155', marginBottom: '0.5rem' }}>Altura Pupilar (AP)</label><input type="text" value={formExamen.ap} onChange={e => setFormExamen({...formExamen, ap: e.target.value})} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1' }} /></div>
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '0.5rem' }}>

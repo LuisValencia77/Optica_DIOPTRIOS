@@ -23,7 +23,7 @@ export const generarTicketVenta = (venta, pacienteNombre = 'Mostrador', carrito 
             ${item.material ? `<br/><span style="color: #64748b; font-size: 12px;">+ Material: ${item.material.nombre}</span>` : ''}
             ${item.tratamientos && item.tratamientos.length > 0 ? item.tratamientos.map(t => `<br/><span style="color: #64748b; font-size: 12px;">+ ${t.nombre}</span>`).join('') : ''}
             ${item.graduacion && item.graduacion !== 'Ninguna' ? `<br/><span style="color: #6d28d9; font-size: 12px;">◆ ${item.graduacion}</span>` : ''}
-            ${item.receta ? `<br/><span style="color: #2563eb; font-size: 12px;">👤 Para: ${item.receta.nombre}</span>` : ''}
+            ${item.receta ? `<br/><span style="color: #2563eb; font-size: 12px;"> Para: ${item.receta.nombre}</span>` : ''}
           </td>
           <td style="padding: 8px 10px; text-align: center; border-bottom: 1px solid #f1f5f9;">${cant}</td>
           <td style="padding: 8px 10px; text-align: right; border-bottom: 1px solid #f1f5f9;">${formatCurrency(precio)}</td>
@@ -82,11 +82,11 @@ export const generarTicketVenta = (venta, pacienteNombre = 'Mostrador', carrito 
 </head>
 <body>
   <div class="no-print" style="text-align: center; margin-bottom: 16px;">
-    <button class="btn-print" onclick="window.print()">🖨️ Imprimir Ticket</button>
+    <button class="btn-print" onclick="window.print()">️ Imprimir Ticket</button>
   </div>
   <div class="ticket">
     <div class="header">
-      <div class="logo">👓 DIOPTRIOS</div>
+      <div class="logo"> DIOPTRIOS</div>
       <div class="subtitle">Salud y Calidad Visual a tu Alcance</div>
     </div>
 

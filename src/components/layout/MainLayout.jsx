@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { LayoutDashboard, Users, UserRoundCog, Package, Glasses, ListOrdered, FileClock, LogOut, Settings, Menu, X, PackageCheck, ShoppingCart } from 'lucide-react';
+import { LayoutDashboard, Users, UserRoundCog, Package, Glasses, ListOrdered, FileClock, LogOut, Settings, Menu, X, PackageCheck, ShoppingCart, DollarSign } from 'lucide-react';
 
 
 const MainLayout = ({ children }) => {
@@ -69,8 +69,14 @@ const MainLayout = ({ children }) => {
             </li>
             <li>
               <NavLink to="/ventas/historial" onClick={closeSidebar} style={({ isActive }) => ({ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1.5rem', textDecoration: 'none', color: '#334155', backgroundColor: isActive ? '#f1f5f9' : 'transparent', fontWeight: isActive ? 'bold' : 'normal' })}>
-                <FileClock size={20} />
-                <span>Historial y Pedidos</span>
+                <DollarSign size={20} />
+                <span>Historial de Ventas</span>
+              </NavLink>
+            </li>
+            <li>
+              <NavLink to="/ventas/pedidos" onClick={closeSidebar} style={({ isActive }) => ({ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1.5rem', textDecoration: 'none', color: '#334155', backgroundColor: isActive ? '#f1f5f9' : 'transparent', fontWeight: isActive ? 'bold' : 'normal' })}>
+                <PackageCheck size={20} />
+                <span>Estado de Pedidos</span>
               </NavLink>
             </li>
             {isManager && (

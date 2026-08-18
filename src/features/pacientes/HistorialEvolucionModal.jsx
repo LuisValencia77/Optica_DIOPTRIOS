@@ -85,25 +85,31 @@ const HistorialEvolucionModal = ({ paciente, examenes, onClose }) => {
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
                       {/* Ojo Derecho */}
                       <div style={{ backgroundColor: '#ffffff', padding: '0.75rem', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
-                        <strong style={{ color: '#2563eb', fontSize: '0.9rem', display: 'block', marginBottom: '0.4rem' }}>👁️ Ojo Derecho (O.D.)</strong>
+                        <strong style={{ color: '#2563eb', fontSize: '0.9rem', display: 'block', marginBottom: '0.4rem' }}>️ Ojo Derecho (O.D.)</strong>
                         <div style={{ fontSize: '0.85rem', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.25rem' }}>
                           <div><strong>Esfera:</strong> {od.esfera || '0.00'}</div>
                           <div><strong>Cilindro:</strong> {od.cilindro || '0.00'}</div>
                           <div><strong>Eje:</strong> {od.eje || '0'}°</div>
-                          <div><strong>Adición:</strong> {od.adicion || '0.00'}</div>
-                          <div style={{ gridColumn: 'span 2', marginTop: '0.2rem', color: '#16a34a' }}><strong>Agudeza:</strong> {od.agudeza || '20/20'}</div>
                         </div>
                       </div>
 
                       {/* Ojo Izquierdo */}
                       <div style={{ backgroundColor: '#ffffff', padding: '0.75rem', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
-                        <strong style={{ color: '#2563eb', fontSize: '0.9rem', display: 'block', marginBottom: '0.4rem' }}>👁️ Ojo Izquierdo (O.I.)</strong>
+                        <strong style={{ color: '#2563eb', fontSize: '0.9rem', display: 'block', marginBottom: '0.4rem' }}>️ Ojo Izquierdo (O.I.)</strong>
                         <div style={{ fontSize: '0.85rem', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.25rem' }}>
                           <div><strong>Esfera:</strong> {oi.esfera || '0.00'}</div>
                           <div><strong>Cilindro:</strong> {oi.cilindro || '0.00'}</div>
                           <div><strong>Eje:</strong> {oi.eje || '0'}°</div>
-                          <div><strong>Adición:</strong> {oi.adicion || '0.00'}</div>
-                          <div style={{ gridColumn: 'span 2', marginTop: '0.2rem', color: '#16a34a' }}><strong>Agudeza:</strong> {oi.agudeza || '20/20'}</div>
+                        </div>
+                      </div>
+
+                      {/* Globales */}
+                      <div style={{ backgroundColor: '#ffffff', padding: '0.75rem', borderRadius: '6px', border: '1px solid #cbd5e1', gridColumn: '1 / -1' }}>
+                        <strong style={{ color: '#2563eb', fontSize: '0.9rem', display: 'block', marginBottom: '0.4rem' }}>Datos Generales</strong>
+                        <div style={{ fontSize: '0.85rem', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.25rem' }}>
+                          <div><strong>Adición:</strong> {ex.adicion || '-'}</div>
+                          <div><strong>DP:</strong> {ex.dp || '-'}</div>
+                          <div><strong>AP:</strong> {ex.ap || '-'}</div>
                         </div>
                       </div>
                     </div>

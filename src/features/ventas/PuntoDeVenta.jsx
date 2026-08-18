@@ -5,11 +5,11 @@ import ModalMercadoPago from '../../components/shared/ModalMercadoPago';
 import FormularioPaciente from '../../components/shared/FormularioPaciente';
 import FormularioExamen from '../../components/shared/FormularioExamen';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Search, User, ClipboardList, ShoppingCart, X, CheckCircle, Image as ImageIcon, Plus, ScanFace, Banknote, CreditCard, Smartphone, Eye, Tag, FileText } from 'lucide-react';
+import { Search, User, ClipboardList, ShoppingCart, X, CheckCircle, Image as ImageIcon, Plus, ScanFace, Banknote, CreditCard, Smartphone, Eye, Tag, FileText, ArrowLeft, ArrowRight } from 'lucide-react';
 
 const PuntoDeVenta = () => {
   const { 
-    productos, pacientes, examenes, ventas, registrarVenta, enviarCorreoConfirmacionPedido, 
+    productos, pacientes, examenes, ventas, registrarVenta, actualizarPagoVenta, enviarCorreoConfirmacionPedido, 
     tratamientos, agregarPaciente, agregarExamen, materiales,
     crearOrdenMercadoPago, simularEventoMercadoPago, obtenerOrdenMercadoPago 
   } = useDatabase();
@@ -23,6 +23,8 @@ const PuntoDeVenta = () => {
   
   const [metodoPago, setMetodoPago] = useState('Efectivo');
   const [efectivoRecibido, setEfectivoRecibido] = useState('');
+  const [precioExamen, setPrecioExamen] = useState(150);
+  const [checkoutActivo, setCheckoutActivo] = useState(false);
   
   const [consulta, setConsulta] = useState('');
   const [lentesTerminados, setLentesTerminados] = useState(true);
@@ -36,6 +38,10 @@ const PuntoDeVenta = () => {
   // --- Estados Mercado Pago Terminal Virtual ---
   const [modalMercadoPago, setModalMercadoPago] = useState(false);
   const [mpOrdenActual, setMpOrdenActual] = useState(null);
+
+  // --- Estado Modo Abono ---
+  const [ventaAbonoOriginal, setVentaAbonoOriginal] = useState(null);
+  const isModoAbono = !!ventaAbonoOriginal;
   
   const [busquedaLista, setBusquedaLista] = useState('');
 
@@ -48,27 +54,17 @@ const PuntoDeVenta = () => {
   // Formularios
   const [formPaciente, setFormPaciente] = useState({ nombre: '', apellidos: '', telefono: '', correo: '', direccion: '', fechaNacimiento: '' });
   
-  const examInicial = { esfera: '0.00', cilindro: '0.00', eje: '0', adicion: '0.00', agudeza: '20/20' };
-  const [formExamen, setFormExamen] = useState({
-    od: {...examInicial},
-    oi: {...examInicial},
-    dp: ''
-  });
+  const examInicial = { od: { esfera: '0.00', cilindro: '0.00', eje: '0' }, oi: { esfera: '0.00', cilindro: '0.00', eje: '0' }, adicion: '0.00', dp: '0.00', ap: '0.00' };
+  const [formExamen, setFormExamen] = useState({...examInicial});
 
-  // --- Estados Receta Adicional ---
-  const [paraQuienTipo, setParaQuienTipo] = useState('principal');
-  const [modalRegistroAdicional, setModalRegistroAdicional] = useState(false);
-  const [adicionalNombre, setAdicionalNombre] = useState('');
-  const [adicionalExamen, setAdicionalExamen] = useState({ od: {...examInicial}, oi: {...examInicial} });
+  // --- Estados Receta Adicional (Removidos) ---
 
   // --- NUEVA ESTRUCTURA CATÁLOGO ---
   const [categoriaTop, setCategoriaTop] = useState('Armazones');
   const [productoConstructor, setProductoConstructor] = useState(null);
   
   const [materialSeleccionado, setMaterialSeleccionado] = useState('');
-  const [tratamientosSeleccionados, setTratamientosSeleccionados] = useState([]);
-  const [graduacionSeleccionada, setGraduacionSeleccionada] = useState('Ninguna');
-  const graduaciones = ['Ninguna', 'Monofocal', 'Bifocal', 'Progresivo', 'Ocupacional'];
+  const [tratamientoSeleccionado, setTratamientoSeleccionado] = useState('');
 
   // Efectos y Memorizaciones
   useEffect(() => {
@@ -76,7 +72,18 @@ const PuntoDeVenta = () => {
       setPacienteId(location.state.newPacienteId.toString());
       window.history.replaceState({}, document.title);
     }
-  }, [location]);
+    if (location.state?.ventaAbonoId && ventas) {
+      const venta = ventas.find(v => String(v.id) === String(location.state.ventaAbonoId));
+      if (venta) {
+        setVentaAbonoOriginal(venta);
+        setPacienteId(String(venta.pacienteId || ''));
+        const prods = typeof venta.productos === 'string' ? JSON.parse(venta.productos) : (venta.productos || []);
+        setCarrito(prods);
+        setCheckoutActivo(true);
+      }
+      window.history.replaceState({}, document.title);
+    }
+  }, [location, ventas]);
 
   // Si cambia el paciente, limpiamos el examen seleccionado
   useEffect(() => {
@@ -104,75 +111,62 @@ const PuntoDeVenta = () => {
         String(p.precio_unitario).includes(term)
       );
     }
+    if (categoriaTop === 'Armazones') {
+      const armazonPropio = {
+        id_producto: 'armazon_propio_cliente',
+        marca: 'Cliente',
+        modelo: 'Armazón Propio',
+        precio_unitario: 0,
+        tipo_articulo: 'armazon',
+        ruta_imagen: null
+      };
+      
+      if (!busquedaProducto.trim() || 'armazón propio cliente armazon'.includes(busquedaProducto.toLowerCase())) {
+        filtered.unshift(armazonPropio);
+      }
+    }
+
     return filtered;
   }, [productos, categoriaTop, busquedaProducto]);
 
   const subtotalCarrito = carrito.reduce((sum, item) => sum + ((Number(item.precio) || 0) * (item.cantidadVenta || 1)), 0);
+  const tienePaquete = carrito.some(i => i.isPaquete);
+  const seCobraExamen = examenSeleccionado && !tienePaquete && !pacienteId;
+  const costoExamenFinal = seCobraExamen ? (parseFloat(precioExamen) || 0) : 0;
+  const subtotalGeneral = subtotalCarrito + costoExamenFinal;
 
   // Cálculo de descuento
   const descuentoMonto = useMemo(() => {
     const val = parseFloat(descuentoValor) || 0;
-    if (descuentoTipo === 'percent') return Math.min(subtotalCarrito, (subtotalCarrito * val) / 100);
-    if (descuentoTipo === 'fixed') return Math.min(subtotalCarrito, val);
+    if (descuentoTipo === 'percent') return Math.min(subtotalGeneral, (subtotalGeneral * val) / 100);
+    if (descuentoTipo === 'fixed') return Math.min(subtotalGeneral, val);
     return 0;
-  }, [descuentoTipo, descuentoValor, subtotalCarrito]);
+  }, [descuentoTipo, descuentoValor, subtotalGeneral]);
 
   // --- Funciones Carrito ---
-  const toggleTratamiento = (id) => {
-    setTratamientosSeleccionados(prev => prev.includes(id) ? prev.filter(tId => tId !== id) : [...prev, id]);
-  };
-
   const calcularPrecioConfig = () => {
     let total = 0;
     if (productoConstructor) total += Number(productoConstructor.precio_unitario) || 0;
-    tratamientosSeleccionados.forEach(id => {
-      const trat = tratamientos.find(t => String(t.id_tratamiento) === String(id));
+    if (tratamientoSeleccionado) {
+      const trat = tratamientos.find(t => String(t.id_tratamiento) === String(tratamientoSeleccionado));
       if (trat) total += Number(trat.costo_adicional) || 0;
-    });
+    }
     return total;
   };
 
   const agregarLenteAlCarrito = () => {
     if (!productoConstructor) return;
 
-    let recetaFinal = null;
-    if (graduacionSeleccionada !== 'Ninguna') {
-      if (paraQuienTipo === 'principal') {
-        if (!examenSeleccionado) {
-          alert('Debes seleccionar un examen visual del paciente principal en el panel derecho.');
-          return;
-        }
-        const ex = examenes.find(e => String(e.id) === String(examenSeleccionado));
-        const pacienteObj = pacientes.find(p => String(p.id) === String(pacienteId));
-        recetaFinal = {
-          tipo: 'principal',
-          nombre: pacienteObj ? `${pacienteObj.nombre} ${pacienteObj.apellidos}` : 'Cliente Principal',
-          od: ex?.od,
-          oi: ex?.oi
-        };
-      } else {
-        if (!adicionalNombre) {
-          alert('Debes ingresar los datos de la persona adicional.');
-          setModalRegistroAdicional(true);
-          return;
-        }
-        recetaFinal = {
-          tipo: 'adicional',
-          nombre: adicionalNombre,
-          od: adicionalExamen.od,
-          oi: adicionalExamen.oi
-        };
-      }
-    }
+    const tratamientoSel = tratamientoSeleccionado 
+      ? tratamientos.find(t => String(t.id_tratamiento) === String(tratamientoSeleccionado))
+      : null;
 
     const paquete = {
       id: Date.now(),
       isPaquete: true,
       principal: productoConstructor,
       material: materialSeleccionado ? materiales.find(m => String(m.id_material) === String(materialSeleccionado)) : null,
-      tratamientos: tratamientosSeleccionados.map(id => tratamientos.find(t => String(t.id_tratamiento) === String(id))).filter(Boolean),
-      graduacion: graduacionSeleccionada,
-      receta: recetaFinal,
+      tratamiento: tratamientoSel,
       cantidadVenta: 1,
       precio: calcularPrecioConfig()
     };
@@ -180,16 +174,12 @@ const PuntoDeVenta = () => {
     setCarrito([...carrito, paquete]);
     setProductoConstructor(null);
     setMaterialSeleccionado('');
-    setTratamientosSeleccionados([]);
-    setGraduacionSeleccionada('Ninguna');
-    setParaQuienTipo('principal');
-    setAdicionalNombre('');
-    setAdicionalExamen({ od: {...examInicial}, oi: {...examInicial} });
+    setTratamientoSeleccionado('');
   };
 
   const quitarDelCarrito = (id) => setCarrito(prev => prev.filter(item => item.id !== id));
 
-  const total = Math.max(0, subtotalCarrito - descuentoMonto);
+  const total = Math.max(0, subtotalGeneral - descuentoMonto);
 
   // --- Handlers Formularios ---
   const handleGuardarPaciente = async (nuevoPacienteData) => {
@@ -206,11 +196,9 @@ const PuntoDeVenta = () => {
     if (!pacienteId) return alert('Seleccione un paciente primero');
     
     const exObj = {
+      ...examenData,
       pacienteId,
-      fecha: new Date().toISOString().split('T')[0],
-      od: examenData.od,
-      oi: examenData.oi,
-      tipoArmazon: examenData.dp // Reutilizando campo para DP por simplicidad
+      fecha: new Date().toISOString().split('T')[0]
     };
     const newEx = await agregarExamen(exObj);
     if (newEx) {
@@ -234,10 +222,10 @@ const PuntoDeVenta = () => {
       });
       setMpOrdenActual(data);
       setMpStatusInfo(`Orden creada por $${valAdelanto} MXN con ID: ${data.id || data.external_reference || 'OK'}`);
-      setMpLogs(prev => [`[${new Date().toLocaleTimeString()}] ✅ Orden Creada ($${valAdelanto} MXN): ${JSON.stringify(data, null, 2)}`, ...prev]);
+      setMpLogs(prev => [`[${new Date().toLocaleTimeString()}]  Orden Creada ($${valAdelanto} MXN): ${JSON.stringify(data, null, 2)}`, ...prev]);
     } catch (err) {
-      setMpStatusInfo(`❌ Error creando orden: ${err.message}`);
-      setMpLogs(prev => [`[${new Date().toLocaleTimeString()}] ❌ Error Orden: ${err.message}`, ...prev]);
+      setMpStatusInfo(` Error creando orden: ${err.message}`);
+      setMpLogs(prev => [`[${new Date().toLocaleTimeString()}]  Error Orden: ${err.message}`, ...prev]);
     } finally {
       setMpCargando(false);
     }
@@ -256,14 +244,14 @@ const PuntoDeVenta = () => {
         payment_method_id: 'visa',
         status_detail: 'accredited'
       });
-      setMpStatusInfo('✅ Evento enviado: Pago simulado y Acreditado');
-      setMpLogs(prev => [`[${new Date().toLocaleTimeString()}] 💳 Evento Simulado: ${JSON.stringify(data, null, 2)}`, ...prev]);
+      setMpStatusInfo(' Evento enviado: Pago simulado y Acreditado');
+      setMpLogs(prev => [`[${new Date().toLocaleTimeString()}]  Evento Simulado: ${JSON.stringify(data, null, 2)}`, ...prev]);
       
       // Auto obtener orden actualizada
       await handleObtenerOrdenMP(mpOrdenActual.id);
     } catch (err) {
-      setMpStatusInfo(`❌ Error simulando evento: ${err.message}`);
-      setMpLogs(prev => [`[${new Date().toLocaleTimeString()}] ❌ Error Evento: ${err.message}`, ...prev]);
+      setMpStatusInfo(` Error simulando evento: ${err.message}`);
+      setMpLogs(prev => [`[${new Date().toLocaleTimeString()}]  Error Evento: ${err.message}`, ...prev]);
     } finally {
       setMpCargando(false);
     }
@@ -282,13 +270,13 @@ const PuntoDeVenta = () => {
         payment_method_id: 'visa',
         status_detail: detail
       });
-      setMpStatusInfo(`❌ SIMULACIÓN DE RECHAZO: Estado ${data.status || 'failed'} (${detail})`);
-      setMpLogs(prev => [`[${new Date().toLocaleTimeString()}] ❌ Falla Simulada (${detail}): ${JSON.stringify(data, null, 2)}`, ...prev]);
+      setMpStatusInfo(` SIMULACIÓN DE RECHAZO: Estado ${data.status || 'failed'} (${detail})`);
+      setMpLogs(prev => [`[${new Date().toLocaleTimeString()}]  Falla Simulada (${detail}): ${JSON.stringify(data, null, 2)}`, ...prev]);
       
       await handleObtenerOrdenMP(mpOrdenActual.id);
     } catch (err) {
-      setMpStatusInfo(`❌ Error simulando falla: ${err.message}`);
-      setMpLogs(prev => [`[${new Date().toLocaleTimeString()}] ❌ Error Falla: ${err.message}`, ...prev]);
+      setMpStatusInfo(` Error simulando falla: ${err.message}`);
+      setMpLogs(prev => [`[${new Date().toLocaleTimeString()}]  Error Falla: ${err.message}`, ...prev]);
     } finally {
       setMpCargando(false);
     }
@@ -303,11 +291,11 @@ const PuntoDeVenta = () => {
         order_id: mpOrdenActual.id,
         status: 'refunded'
       });
-      setMpStatusInfo('🔄 SIMULACIÓN DE REEMBOLSO: Estado REFUNDED');
-      setMpLogs(prev => [`[${new Date().toLocaleTimeString()}] 🔄 Reembolso Simulado: ${JSON.stringify(data, null, 2)}`, ...prev]);
+      setMpStatusInfo(' SIMULACIÓN DE REEMBOLSO: Estado REFUNDED');
+      setMpLogs(prev => [`[${new Date().toLocaleTimeString()}]  Reembolso Simulado: ${JSON.stringify(data, null, 2)}`, ...prev]);
       await handleObtenerOrdenMP(mpOrdenActual.id);
     } catch (err) {
-      setMpStatusInfo(`❌ Error simulando reembolso: ${err.message}`);
+      setMpStatusInfo(` Error simulando reembolso: ${err.message}`);
     } finally {
       setMpCargando(false);
     }
@@ -322,11 +310,11 @@ const PuntoDeVenta = () => {
         order_id: mpOrdenActual.id,
         status: 'canceled'
       });
-      setMpStatusInfo('🚫 SIMULACIÓN DE CANCELACIÓN: Estado CANCELED');
-      setMpLogs(prev => [`[${new Date().toLocaleTimeString()}] 🚫 Cancelación Simulada: ${JSON.stringify(data, null, 2)}`, ...prev]);
+      setMpStatusInfo(' SIMULACIÓN DE CANCELACIÓN: Estado CANCELED');
+      setMpLogs(prev => [`[${new Date().toLocaleTimeString()}]  Cancelación Simulada: ${JSON.stringify(data, null, 2)}`, ...prev]);
       await handleObtenerOrdenMP(mpOrdenActual.id);
     } catch (err) {
-      setMpStatusInfo(`❌ Error simulando cancelación: ${err.message}`);
+      setMpStatusInfo(` Error simulando cancelación: ${err.message}`);
     } finally {
       setMpCargando(false);
     }
@@ -341,11 +329,11 @@ const PuntoDeVenta = () => {
         order_id: mpOrdenActual.id,
         status: 'expired'
       });
-      setMpStatusInfo('⏳ SIMULACIÓN DE EXPIRACIÓN: Estado EXPIRED (Timeout presencial)');
-      setMpLogs(prev => [`[${new Date().toLocaleTimeString()}] ⏳ Expiración Simulada: ${JSON.stringify(data, null, 2)}`, ...prev]);
+      setMpStatusInfo(' SIMULACIÓN DE EXPIRACIÓN: Estado EXPIRED (Timeout presencial)');
+      setMpLogs(prev => [`[${new Date().toLocaleTimeString()}]  Expiración Simulada: ${JSON.stringify(data, null, 2)}`, ...prev]);
       await handleObtenerOrdenMP(mpOrdenActual.id);
     } catch (err) {
-      setMpStatusInfo(`❌ Error simulando expiración: ${err.message}`);
+      setMpStatusInfo(` Error simulando expiración: ${err.message}`);
     } finally {
       setMpCargando(false);
     }
@@ -360,11 +348,11 @@ const PuntoDeVenta = () => {
         order_id: mpOrdenActual.id,
         status: 'action_required'
       });
-      setMpStatusInfo('📱 SIMULACIÓN DE ACCIÓN REQUERIDA: Estado ACTION_REQUIRED (Revisar Terminal/NIP)');
-      setMpLogs(prev => [`[${new Date().toLocaleTimeString()}] 📱 Acción Requerida Simulada: ${JSON.stringify(data, null, 2)}`, ...prev]);
+      setMpStatusInfo(' SIMULACIÓN DE ACCIÓN REQUERIDA: Estado ACTION_REQUIRED (Revisar Terminal/NIP)');
+      setMpLogs(prev => [`[${new Date().toLocaleTimeString()}]  Acción Requerida Simulada: ${JSON.stringify(data, null, 2)}`, ...prev]);
       await handleObtenerOrdenMP(mpOrdenActual.id);
     } catch (err) {
-      setMpStatusInfo(`❌ Error simulando acción requerida: ${err.message}`);
+      setMpStatusInfo(` Error simulando acción requerida: ${err.message}`);
     } finally {
       setMpCargando(false);
     }
@@ -381,10 +369,10 @@ const PuntoDeVenta = () => {
       const est = data.status || data.data?.status || 'desconocido';
       const det = data.status_detail || data.data?.status_detail || '';
       setMpStatusInfo(`Estado de la orden: ${est.toUpperCase()} ${det ? `(${det})` : ''}`);
-      setMpLogs(prev => [`[${new Date().toLocaleTimeString()}] 🔍 Estatus Orden: ${JSON.stringify(data, null, 2)}`, ...prev]);
+      setMpLogs(prev => [`[${new Date().toLocaleTimeString()}]  Estatus Orden: ${JSON.stringify(data, null, 2)}`, ...prev]);
     } catch (err) {
-      setMpStatusInfo(`❌ Error consultando orden: ${err.message}`);
-      setMpLogs(prev => [`[${new Date().toLocaleTimeString()}] ❌ Error Consulta: ${err.message}`, ...prev]);
+      setMpStatusInfo(` Error consultando orden: ${err.message}`);
+      setMpLogs(prev => [`[${new Date().toLocaleTimeString()}]  Error Consulta: ${err.message}`, ...prev]);
     } finally {
       setMpCargando(false);
     }
@@ -393,19 +381,19 @@ const PuntoDeVenta = () => {
   const handleFinalizarVentaBd = async () => {
     const est = (mpOrdenActual?.status || mpOrdenActual?.data?.status || '').toLowerCase();
     if (est === 'failed' || est === 'rejected') {
-      return alert('❌ No se puede registrar la venta porque el cobro con Mercado Pago fue RECHAZADO / FALLIDO.');
+      return alert(' No se puede registrar la venta porque el cobro con Mercado Pago fue RECHAZADO / FALLIDO.');
     }
     if (est === 'canceled' || est === 'refunded') {
-      return alert(`❌ No se puede registrar la venta porque la orden está ${est.toUpperCase()} (Cancelada/Reembolsada).`);
+      return alert(` No se puede registrar la venta porque la orden está ${est.toUpperCase()} (Cancelada/Reembolsada).`);
     }
     if (est === 'expired') {
-      return alert('⏳ No se puede registrar la venta porque la orden EXPIRÓ. Por favor crea una nueva orden.');
+      return alert(' No se puede registrar la venta porque la orden EXPIRÓ. Por favor crea una nueva orden.');
     }
     if (est === 'action_required') {
-      return alert('📱 No se puede registrar la venta aún. La terminal requiere una acción del cliente (NIP / Deslizar tarjeta).');
+      return alert(' No se puede registrar la venta aún. La terminal requiere una acción del cliente (NIP / Deslizar tarjeta).');
     }
     if (!mpOrdenActual?.id) {
-      if (!window.confirm('⚠️ Aún no has creado la orden en Mercado Pago. ¿Deseas confirmar la venta de todas formas?')) {
+      if (!window.confirm('️ Aún no has creado la orden en Mercado Pago. ¿Deseas confirmar la venta de todas formas?')) {
         return;
       }
     }
@@ -421,33 +409,35 @@ const PuntoDeVenta = () => {
     const valAdelanto = parseFloat(efectivoRecibido) || total;
 
     const productosPlanos = [];
-    let graduacionesParaDb = [];
     carrito.forEach(item => {
       if (item.isPaquete) {
         productosPlanos.push({ ...item.principal, cantidadVenta: item.cantidadVenta, precioBase: item.principal.precio_unitario });
         if (item.material) productosPlanos.push({ ...item.material, cantidadVenta: item.cantidadVenta });
-        if (item.graduacion !== 'Ninguna') graduacionesParaDb.push(item.graduacion);
+        if (item.tratamiento) productosPlanos.push({ ...item.tratamiento, cantidadVenta: item.cantidadVenta });
       } else {
         productosPlanos.push(item);
       }
     });
 
-    const venta = {
+      const tienePaquete = carrito.some(i => i.isPaquete);
+      const isTerminado = !tienePaquete;
+
+      const venta = {
       id: ventaId,
       pacienteId: pacienteId ? pacienteId.toString() : null,
       examenId: examenSeleccionado ? examenSeleccionado.toString().replace('ex-', '') : null,
       productos: productosPlanos,
       detallesLentes: { config: carrito.filter(i => i.isPaquete), mercadoPago: mpData || mpOrdenActual },
       consulta: observaciones,
-      lentesTerminados,
-      motivoNoTerminado: lentesTerminados ? '' : motivoNoTerminado,
-      subtotalCarrito,
+      lentesTerminados: isTerminado,
+      motivoNoTerminado: isTerminado ? '' : 'Pendiente pedido de laboratorio',
+      subtotalCarrito: subtotalGeneral,
       descuento: descuentoMonto,
       total,
       adelanto: valAdelanto,
       saldoPendiente: Math.max(0, total - valAdelanto),
       estadoPago: valAdelanto >= total ? 'Pagado' : 'Pendiente',
-      graduacion: [...new Set(graduacionesParaDb)].join(', '),
+      graduacion: '',
       metodoPago
     };
 
@@ -469,9 +459,9 @@ const PuntoDeVenta = () => {
 
   // --- Handler Procesar Venta ---
   const handleProcesar = async () => {
-    if (carrito.length === 0) return alert('Agrega al menos un producto al carrito.');
+    if (carrito.length === 0 && subtotalGeneral === 0) return alert('No hay nada para cobrar.');
     
-    if (metodoPago === 'Mercado Pago') {
+    if (metodoPago === 'Crédito' || metodoPago === 'Débito') {
       setModalMercadoPago(true);
       return;
     }
@@ -488,7 +478,7 @@ const PuntoDeVenta = () => {
         <div style={{ flex: '7', display: 'flex', flexDirection: 'column', gap: '1.5rem', overflowY: 'auto', padding: '1.5rem', backgroundColor: '#f8fafc' }}>
           
           {/* MITAD SUPERIOR: Selección de Producto Base */}
-          <div style={{ backgroundColor: 'white', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column', flex: '1 1 50%', minHeight: '350px' }}>
+          <div style={{ backgroundColor: 'white', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
             <div style={{ display: 'flex', borderBottom: '1px solid #e2e8f0' }}>
               {['Armazones', 'Lentes de Contacto', 'Accesorios'].map(cat => (
                 <button
@@ -515,7 +505,7 @@ const PuntoDeVenta = () => {
                 />
               </div>
             </div>
-            <div style={{ padding: '1.25rem', flex: 1, overflowY: 'auto' }}>
+            <div style={{ padding: '1.25rem', flex: 1, overflowY: 'auto', minHeight: 0 }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '1rem' }}>
                 {productosTop.map(prod => (
                   <div 
@@ -523,7 +513,13 @@ const PuntoDeVenta = () => {
                     style={{ border: '2px solid', borderColor: productoConstructor?.id_producto === prod.id_producto ? '#3b82f6' : '#e2e8f0', borderRadius: '12px', padding: '1rem', cursor: 'pointer', backgroundColor: productoConstructor?.id_producto === prod.id_producto ? '#eff6ff' : 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', minHeight: '160px' }}
                   >
                     <div style={{ marginBottom: '1rem', flex: 1, display: 'flex', alignItems: 'center' }}>
-                      {prod.ruta_imagen ? <img src={prod.ruta_imagen} alt="Img" style={{ width: '80px', height: '80px', borderRadius: '8px', objectFit: 'contain' }} /> : <div style={{width: '60px', height: '60px', borderRadius: '8px', backgroundColor: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center'}}><ImageIcon size={32} color="#94a3b8" /></div>}
+                      {prod.ruta_imagen ? (
+                        <img src={prod.ruta_imagen} alt="Img" style={{ width: '80px', height: '80px', borderRadius: '8px', objectFit: 'contain' }} />
+                      ) : (
+                        <div style={{width: '60px', height: '60px', borderRadius: '8px', backgroundColor: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+                          {prod.id_producto === 'armazon_propio_cliente' ? <User size={32} color="#94a3b8" /> : <ImageIcon size={32} color="#94a3b8" />}
+                        </div>
+                      )}
                     </div>
                     <div style={{ fontSize: '0.75rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{prod.marca}</div>
                     <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#1e293b', lineHeight: 1.2, margin: '0.2rem 0' }}>{prod.modelo || prod.marca}</div>
@@ -535,15 +531,15 @@ const PuntoDeVenta = () => {
           </div>
 
           {/* MITAD INFERIOR: Configuración */}
-          <div style={{ backgroundColor: 'white', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column', flex: '1 1 50%', minHeight: '350px' }}>
+          <div style={{ backgroundColor: 'white', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
             <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid #e2e8f0', backgroundColor: '#f8fafc', borderTopLeftRadius: '12px', borderTopRightRadius: '12px' }}>
               <h3 style={{ margin: 0, fontSize: '1rem', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Plus size={18} /> Configurar Producto</h3>
             </div>
             
-            <div style={{ padding: '1.25rem', display: 'flex', gap: '1.5rem', flex: 1 }}>
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: '1.25rem', display: 'flex', gap: '1.5rem', flex: 1, minHeight: 0 }}>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                 <h4 style={{ fontSize: '0.85rem', color: '#64748b', marginTop: 0, marginBottom: '0.75rem', textTransform: 'uppercase' }}>1. Material del Lente</h4>
-                <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem', paddingRight: '0.5rem' }}>
+                <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem', paddingRight: '0.5rem', minHeight: 0 }}>
                   {materiales.map(mat => (
                     <label key={mat.id_material} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.6rem', border: '1px solid', borderColor: materialSeleccionado === mat.id_material.toString() ? '#3b82f6' : '#e2e8f0', borderRadius: '8px', cursor: 'pointer', backgroundColor: materialSeleccionado === mat.id_material.toString() ? '#eff6ff' : 'white' }}>
                       <input type="radio" name="material" value={mat.id_material} checked={materialSeleccionado === mat.id_material.toString()} onChange={(e) => setMaterialSeleccionado(e.target.value)} style={{ margin: 0 }} />
@@ -557,48 +553,20 @@ const PuntoDeVenta = () => {
                 </div>
               </div>
 
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-                <h4 style={{ fontSize: '0.85rem', color: '#64748b', marginTop: 0, marginBottom: '0.75rem', textTransform: 'uppercase' }}>2. Tratamientos (Múltiple)</h4>
-                <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem', paddingRight: '0.5rem' }}>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                <h4 style={{ fontSize: '0.85rem', color: '#64748b', marginTop: 0, marginBottom: '0.75rem', textTransform: 'uppercase' }}>2. Tratamiento</h4>
+                <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem', paddingRight: '0.5rem', minHeight: 0 }}>
                   {tratamientos.map(trat => (
-                    <label key={trat.id_tratamiento} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.6rem', border: '1px solid', borderColor: tratamientosSeleccionados.includes(trat.id_tratamiento.toString()) ? '#10b981' : '#e2e8f0', borderRadius: '8px', cursor: 'pointer', backgroundColor: tratamientosSeleccionados.includes(trat.id_tratamiento.toString()) ? '#ecfdf5' : 'white' }}>
-                      <input type="checkbox" checked={tratamientosSeleccionados.includes(trat.id_tratamiento.toString())} onChange={() => toggleTratamiento(trat.id_tratamiento.toString())} style={{ margin: 0 }} />
+                    <label key={trat.id_tratamiento} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.6rem', border: '1px solid', borderColor: tratamientoSeleccionado === trat.id_tratamiento.toString() ? '#10b981' : '#e2e8f0', borderRadius: '8px', cursor: 'pointer', backgroundColor: tratamientoSeleccionado === trat.id_tratamiento.toString() ? '#ecfdf5' : 'white' }}>
+                      <input type="radio" name="tratamiento" value={trat.id_tratamiento} checked={tratamientoSeleccionado === trat.id_tratamiento.toString()} onChange={(e) => setTratamientoSeleccionado(e.target.value)} style={{ margin: 0 }} />
                       <div style={{ flex: 1, fontSize: '0.85rem', fontWeight: 'bold' }}>{trat.nombre}</div>
                       <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#10b981' }}>+${(Number(trat.costo_adicional)||0)}</div>
                     </label>
                   ))}
-                </div>
-              </div>
-
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-                <h4 style={{ fontSize: '0.85rem', color: '#64748b', marginTop: 0, marginBottom: '0.75rem', textTransform: 'uppercase' }}>3. Graduación</h4>
-                <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem', paddingRight: '0.5rem' }}>
-                  {graduaciones.map(grad => (
-                    <label key={grad} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.6rem', border: '1px solid', borderColor: graduacionSeleccionada === grad ? '#8b5cf6' : '#e2e8f0', borderRadius: '8px', cursor: 'pointer', backgroundColor: graduacionSeleccionada === grad ? '#f5f3ff' : 'white' }}>
-                      <input type="radio" name="graduacion" value={grad} checked={graduacionSeleccionada === grad} onChange={(e) => setGraduacionSeleccionada(e.target.value)} style={{ margin: 0 }} />
-                      <div style={{ flex: 1, fontSize: '0.85rem', fontWeight: 'bold', color: graduacionSeleccionada === grad ? '#6d28d9' : '#334155' }}>{grad}</div>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-                <h4 style={{ fontSize: '0.85rem', color: '#64748b', marginTop: 0, marginBottom: '0.75rem', textTransform: 'uppercase' }}>4. ¿Para quién es?</h4>
-                <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem', paddingRight: '0.5rem' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.6rem', border: '1px solid', borderColor: paraQuienTipo === 'principal' ? '#f59e0b' : '#e2e8f0', borderRadius: '8px', cursor: 'pointer', backgroundColor: paraQuienTipo === 'principal' ? '#fffbeb' : 'white' }}>
-                    <input type="radio" value="principal" checked={paraQuienTipo === 'principal'} onChange={() => setParaQuienTipo('principal')} style={{ margin: 0 }} />
-                    <div style={{ flex: 1, fontSize: '0.85rem', fontWeight: 'bold' }}>Paciente Principal</div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.6rem', border: '1px solid', borderColor: tratamientoSeleccionado === '' ? '#10b981' : '#e2e8f0', borderRadius: '8px', cursor: 'pointer', backgroundColor: tratamientoSeleccionado === '' ? '#ecfdf5' : 'white' }}>
+                    <input type="radio" name="tratamiento" value="" checked={tratamientoSeleccionado === ''} onChange={() => setTratamientoSeleccionado('')} style={{ margin: 0 }} />
+                    <div style={{ flex: 1, fontSize: '0.85rem', fontWeight: 'bold' }}>Ninguno</div>
                   </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.6rem', border: '1px solid', borderColor: paraQuienTipo === 'adicional' ? '#f59e0b' : '#e2e8f0', borderRadius: '8px', cursor: 'pointer', backgroundColor: paraQuienTipo === 'adicional' ? '#fffbeb' : 'white' }}>
-                    <input type="radio" value="adicional" checked={paraQuienTipo === 'adicional'} onChange={() => setParaQuienTipo('adicional')} style={{ margin: 0 }} />
-                    <div style={{ flex: 1, fontSize: '0.85rem', fontWeight: 'bold' }}>Persona Adicional</div>
-                  </label>
-                  
-                  {paraQuienTipo === 'adicional' && (
-                    <button onClick={() => setModalRegistroAdicional(true)} style={{ marginTop: '0.5rem', padding: '0.5rem', backgroundColor: '#fef3c7', color: '#d97706', border: '1px dashed #f59e0b', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.8rem' }}>
-                      {adicionalNombre ? `Receta de ${adicionalNombre}` : '+ Ingresar Datos Adicionales'}
-                    </button>
-                  )}
                 </div>
               </div>
             </div>
@@ -615,216 +583,305 @@ const PuntoDeVenta = () => {
           </div>
         </div>
 
-        {/* COLUMNA DERECHA: TICKET DE COMPRA */}
+        {/* COLUMNA DERECHA: TICKET DE COMPRA Y PAGO */}
         <div style={{ flex: '3', minWidth: '400px', backgroundColor: 'white', borderLeft: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', height: '100%', position: 'sticky', top: 0 }}>
           
-          <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
-            
-            {/* Sección Cliente */}
-            <div style={{ borderBottom: '1px solid #e2e8f0', padding: '1.25rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                <div style={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#1e293b' }}>
-                  <User size={18} /> Cliente
-                </div>
-                {pacienteId ? <div style={{ color: '#10b981', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}><CheckCircle size={14}/> Vinculado</div> : null}
-              </div>
-
-              {!pacienteId ? (
-                <button 
-                  onClick={() => setModalListaPacientes(true)}
-                  style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px dashed #cbd5e1', backgroundColor: '#f8fafc', color: '#3b82f6', fontWeight: 'bold', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}
-                >
-                  <Search size={16} /> Buscar o Seleccionar Paciente
-                </button>
-              ) : (
-                <div style={{ backgroundColor: '#f8fafc', padding: '0.75rem', borderRadius: '8px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-                    <div style={{ backgroundColor: '#e2e8f0', width: '36px', height: '36px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <User size={18} color="#64748b" />
+          {!checkoutActivo ? (
+            <>
+              {/* --- VISTA 1: RESUMEN DE VENTA --- */}
+              <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+                
+                {/* Sección Cliente */}
+                <div style={{ borderBottom: '1px solid #e2e8f0', padding: '1.25rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                    <div style={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#1e293b' }}>
+                      <User size={18} /> Cliente
                     </div>
-                    <div>
-                      <div style={{ fontWeight: 'bold', fontSize: '0.9rem', color: '#1e293b' }}>{pacientes.find(p => String(p.id) === String(pacienteId))?.nombre} {pacientes.find(p => String(p.id) === String(pacienteId))?.apellidos}</div>
-                      <div style={{ fontSize: '0.75rem', color: '#64748b' }}>CC {pacientes.find(p => String(p.id) === String(pacienteId))?.id} · {pacientes.find(p => String(p.id) === String(pacienteId))?.telefono}</div>
-                    </div>
+                    {pacienteId ? <div style={{ color: '#10b981', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}><CheckCircle size={14}/> Vinculado</div> : null}
                   </div>
-                  <button onClick={() => setPacienteId('')} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 0 }}><X size={16} /></button>
-                </div>
-              )}
-            </div>
 
-            {/* Sección Examen */}
-            <div style={{ borderBottom: '1px solid #e2e8f0', padding: '1.25rem', display: 'flex', flexDirection: 'column' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                <div style={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#1e293b' }}>
-                  <ScanFace size={18} /> Examen de la vista
-                </div>
-                {examenSeleccionado ? <div style={{ color: '#10b981', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}><CheckCircle size={14}/> Seleccionado</div> : null}
-              </div>
-              
-              {!pacienteId ? (
-                <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Primero seleccione un paciente</div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                  {examenesPaciente.length === 0 ? (
-                    <div style={{ fontSize: '0.85rem', color: '#94a3b8', fontStyle: 'italic' }}>Este paciente no tiene exámenes registrados.</div>
+                  {!pacienteId ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                      <div style={{ backgroundColor: '#f8fafc', padding: '0.75rem', borderRadius: '8px', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                        <div style={{ backgroundColor: '#e2e8f0', width: '36px', height: '36px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <User size={18} color="#64748b" />
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: 'bold', fontSize: '0.9rem', color: '#1e293b' }}>Venta de Mostrador</div>
+                          <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Sin paciente registrado</div>
+                        </div>
+                      </div>
+                      <button 
+                        onClick={() => setModalListaPacientes(true)}
+                        style={{ width: '100%', padding: '0.5rem', borderRadius: '8px', border: '1px dashed #cbd5e1', backgroundColor: '#ffffff', color: '#3b82f6', fontWeight: 'bold', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.85rem' }}
+                      >
+                        <Search size={16} /> Cambiar a paciente registrado
+                      </button>
+                    </div>
                   ) : (
-                    <div style={{ maxHeight: '180px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem', paddingRight: '0.25rem' }}>
-                      {examenesPaciente.map(ex => {
-                        const isSel = String(ex.id) === String(examenSeleccionado);
-                        return (
-                          <div 
-                            key={ex.id} 
-                            onClick={() => setExamenSeleccionado(ex.id)}
-                            style={{ backgroundColor: isSel ? '#eff6ff' : '#f8fafc', padding: '0.75rem', borderRadius: '8px', border: `1px solid ${isSel ? '#bfdbfe' : '#e2e8f0'}`, cursor: 'pointer', transition: 'all 0.2s', position: 'relative' }}
-                          >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 'bold', fontSize: '0.85rem', color: isSel ? '#1d4ed8' : '#475569', marginBottom: '0.5rem' }}>
-                              <ScanFace size={14} /> {ex.fecha} · {ex.tratamientoLentes || 'Sin Doctor'}
-                            </div>
-                            <div style={{ display: 'flex', gap: '1.5rem', fontSize: '0.75rem', color: isSel ? '#2563eb' : '#64748b' }}>
-                              <div><div style={{ fontWeight: 'bold', marginBottom: '0.2rem' }}>OD</div><div>{ex.od?.esfera} / {ex.od?.cilindro} / {ex.od?.eje}°</div></div>
-                              <div><div style={{ fontWeight: 'bold', marginBottom: '0.2rem' }}>OS</div><div>{ex.oi?.esfera} / {ex.oi?.cilindro} / {ex.oi?.eje}°</div></div>
-                            </div>
-                            {ex.tipoArmazon && <div style={{ fontSize: '0.75rem', color: isSel ? '#2563eb' : '#64748b', marginTop: '0.4rem' }}>DP: {ex.tipoArmazon} mm</div>}
-                          </div>
-                        );
-                      })}
+                    <div style={{ backgroundColor: '#f8fafc', padding: '0.75rem', borderRadius: '8px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                        <div style={{ backgroundColor: '#e2e8f0', width: '36px', height: '36px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <User size={18} color="#64748b" />
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: 'bold', fontSize: '0.9rem', color: '#1e293b' }}>{pacientes.find(p => String(p.id) === String(pacienteId))?.nombre} {pacientes.find(p => String(p.id) === String(pacienteId))?.apellidos}</div>
+                          <div style={{ fontSize: '0.75rem', color: '#64748b' }}>CC {pacientes.find(p => String(p.id) === String(pacienteId))?.id} · {pacientes.find(p => String(p.id) === String(pacienteId))?.telefono}</div>
+                        </div>
+                      </div>
+                      <button onClick={() => setPacienteId('')} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 0 }}><X size={16} /></button>
                     </div>
                   )}
-                  
-                  {/* Botón Realizar Examen Siempre Visible */}
-                  <button 
-                    onClick={() => setModalRegistroExamen(true)}
-                    style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #3b82f6', backgroundColor: 'white', color: '#3b82f6', fontWeight: 'bold', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', marginTop: '0.25rem' }}
-                  >
-                    <Plus size={16} /> Realizar Examen
-                  </button>
                 </div>
-              )}
-            </div>
 
-            {/* Venta actual */}
-            <div style={{ flex: 1, padding: '1.25rem', display: 'flex', flexDirection: 'column' }}>
-              <div style={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#1e293b', marginBottom: '1rem' }}>
-                <ShoppingCart size={18} /> Venta actual
-              </div>
-              
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.75rem', overflowY: 'auto' }}>
-                {carrito.length === 0 ? (
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', textAlign: 'center' }}>
-                    <ShoppingCart size={48} color="#e2e8f0" style={{ marginBottom: '1rem' }} />
-                    <div style={{ maxWidth: '200px', fontSize: '0.9rem' }}>Toca un producto del catálogo para agregarlo aquí</div>
+                {/* Sección Examen */}
+                <div style={{ borderBottom: '1px solid #e2e8f0', padding: '1.25rem', display: 'flex', flexDirection: 'column' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                    <div style={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#1e293b' }}>
+                      <ScanFace size={18} /> Examen de la vista
+                    </div>
+                    {examenSeleccionado ? (
+                      <div style={{ color: '#10b981', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                        <CheckCircle size={14}/> Seleccionado
+                        {!seCobraExamen ? (
+                          <span style={{ marginLeft: '0.5rem', backgroundColor: '#dcfce7', color: '#166534', padding: '0.1rem 0.4rem', borderRadius: '4px', fontWeight: 'bold' }}>GRATIS</span>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
-                ) : (
-                  carrito.map((item) => (
-                    <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', backgroundColor: '#f8fafc', padding: '0.75rem', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#1e293b' }}>{item.principal.marca}</div>
-                        <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{item.principal.modelo}</div>
-                        {item.isPaquete && (
-                          <div style={{ margin: '0.25rem 0 0 0', fontSize: '0.75rem', color: '#64748b' }}>
-                            <ul style={{ margin: 0, paddingLeft: '1.25rem' }}>
-                              {item.material && <li>+ Mat: {item.material.nombre}</li>}
-                              {item.tratamientos.map(t => <li key={t.id_tratamiento}>+ Trat: {t.nombre}</li>)}
-                              {item.graduacion !== 'Ninguna' && <li>+ Grad: {item.graduacion}</li>}
-                            </ul>
-                            {item.receta && (
-                              <div style={{ marginTop: '0.5rem', padding: '0.5rem', backgroundColor: '#f1f5f9', borderRadius: '4px', borderLeft: '3px solid #3b82f6' }}>
-                                <div style={{ fontWeight: 'bold', color: '#1e293b', marginBottom: '0.25rem' }}>👤 Para: {item.receta.nombre}</div>
-                                {JSON.stringify(item.receta.od) === JSON.stringify(item.receta.oi) ? (
-                                  <div>Ambos Ojos: Esf {item.receta.od?.esfera} / Cil {item.receta.od?.cilindro} / Eje {item.receta.od?.eje}°</div>
-                                ) : (
-                                  <>
-                                    <div>OD: Esf {item.receta.od?.esfera} / Cil {item.receta.od?.cilindro} / Eje {item.receta.od?.eje}°</div>
-                                    <div>OS: Esf {item.receta.oi?.esfera} / Cil {item.receta.oi?.cilindro} / Eje {item.receta.oi?.eje}°</div>
-                                  </>
+                  
+                  {!pacienteId ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                      <div style={{ fontSize: '0.85rem', color: '#94a3b8', fontStyle: 'italic' }}>
+                        Para asociar un examen ya existente, selecciona un paciente arriba.
+                      </div>
+                      {/* Costo del examen si es venta mostrador y no lleva lentes */}
+                      {seCobraExamen && (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#fef3c7', padding: '0.75rem', borderRadius: '8px', border: '1px solid #fde68a' }}>
+                          <span style={{ fontSize: '0.85rem', color: '#92400e', fontWeight: 'bold' }}>Costo Examen de Mostrador:</span>
+                          <div style={{ position: 'relative' }}>
+                            <span style={{ position: 'absolute', left: '0.5rem', top: '50%', transform: 'translateY(-50%)', color: '#92400e', fontSize: '0.9rem' }}>$</span>
+                            <input
+                              type="number"
+                              value={precioExamen}
+                              onChange={(e) => setPrecioExamen(e.target.value)}
+                              style={{ padding: '0.3rem 0.3rem 0.3rem 1.2rem', width: '80px', border: '1px solid #fcd34d', borderRadius: '4px', textAlign: 'right', outline: 'none' }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                      {/* Botón Realizar Examen Siempre Visible */}
+                      <button 
+                        onClick={() => setModalRegistroExamen(true)}
+                        style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #3b82f6', backgroundColor: 'white', color: '#3b82f6', fontWeight: 'bold', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', marginTop: '0.25rem' }}
+                      >
+                        <Plus size={16} /> Realizar Examen
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                      {examenesPaciente.length === 0 ? (
+                        <div style={{ fontSize: '0.85rem', color: '#94a3b8', fontStyle: 'italic' }}>Este paciente no tiene exámenes registrados.</div>
+                      ) : (
+                        <div style={{ maxHeight: '180px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem', paddingRight: '0.25rem' }}>
+                          {examenesPaciente
+                            .filter(ex => !examenSeleccionado || String(ex.id) === String(examenSeleccionado))
+                            .map(ex => {
+                            const isSel = String(ex.id) === String(examenSeleccionado);
+                            return (
+                              <div 
+                                key={ex.id} 
+                                onClick={() => setExamenSeleccionado(isSel ? null : ex.id)}
+                                style={{ backgroundColor: isSel ? '#eff6ff' : '#f8fafc', padding: '0.75rem', borderRadius: '8px', border: `1px solid ${isSel ? '#bfdbfe' : '#e2e8f0'}`, cursor: 'pointer', transition: 'all 0.2s', position: 'relative' }}
+                              >
+                                {isSel && (
+                                  <div style={{ position: 'absolute', top: '0.5rem', right: '0.5rem', color: '#60a5fa' }}>
+                                    <X size={16} />
+                                  </div>
                                 )}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 'bold', fontSize: '0.85rem', color: isSel ? '#1d4ed8' : '#475569', marginBottom: '0.5rem' }}>
+                                  <ScanFace size={14} /> {ex.fecha} • {ex.doctor || 'Sin Doctor'}
+                                </div>
+                                <div style={{ display: 'flex', gap: '1.5rem', fontSize: '0.75rem', color: isSel ? '#2563eb' : '#64748b' }}>
+                                  <div><div style={{ fontWeight: 'bold', marginBottom: '0.2rem' }}>OD</div><div>{ex.od?.esfera || '-'} / {ex.od?.cilindro || '-'} / {ex.od?.eje || '-'}°</div></div>
+                                  <div><div style={{ fontWeight: 'bold', marginBottom: '0.2rem' }}>OS</div><div>{ex.oi?.esfera || '-'} / {ex.oi?.cilindro || '-'} / {ex.oi?.eje || '-'}°</div></div>
+                                  <div><div style={{ fontWeight: 'bold', marginBottom: '0.2rem' }}>Adición / DP / AP</div><div>{ex.adicion || '-'} / {ex.dp ? `${ex.dp} mm` : '-'} / {ex.ap || '-'}</div></div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                      
+                      {/* Botón Realizar Examen Siempre Visible */}
+                      <button 
+                        onClick={() => setModalRegistroExamen(true)}
+                        style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #3b82f6', backgroundColor: 'white', color: '#3b82f6', fontWeight: 'bold', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', marginTop: '0.25rem' }}
+                      >
+                        <Plus size={16} /> Realizar Examen Nuevo
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Venta actual */}
+                <div style={{ flex: 1, padding: '1.25rem', display: 'flex', flexDirection: 'column' }}>
+                  <div style={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#1e293b', marginBottom: '1rem' }}>
+                    <ShoppingCart size={18} /> Venta actual
+                  </div>
+                  
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.75rem', overflowY: 'auto' }}>
+                    {carrito.length === 0 ? (
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', textAlign: 'center' }}>
+                        <ShoppingCart size={48} color="#e2e8f0" style={{ marginBottom: '1rem' }} />
+                        <div style={{ maxWidth: '200px', fontSize: '0.9rem' }}>Toca un producto del catálogo para agregarlo aquí</div>
+                      </div>
+                    ) : (
+                      carrito.map((item) => (
+                        <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', backgroundColor: '#f8fafc', padding: '0.75rem', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#1e293b' }}>{item.principal.marca}</div>
+                            <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{item.principal.modelo}</div>
+                            {item.isPaquete && (
+                              <div style={{ margin: '0.25rem 0 0 0', fontSize: '0.75rem', color: '#64748b' }}>
+                                <ul style={{ margin: 0, paddingLeft: '1.25rem' }}>
+                                  {item.material && <li>+ Mat: {item.material.nombre}</li>}
+                                  {item.tratamiento && <li>+ Trat: {item.tratamiento.nombre}</li>}
+                                </ul>
                               </div>
                             )}
                           </div>
-                        )}
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-                        <div style={{ fontWeight: 'bold', color: '#0f172a' }}>${Number(item.precio).toLocaleString()}</div>
-                        <button onClick={() => quitarDelCarrito(item.id)} style={{ background: 'none', border: 'none', color: '#ef4444', fontSize: '0.75rem', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>Quitar</button>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-
-          </div>
-
-          {/* Bottom Fixed Totals */}
-          <div style={{ borderTop: '1px solid #e2e8f0', padding: '1.25rem', backgroundColor: 'white' }}>
-            <div style={{ backgroundColor: '#f1f5f9', padding: '1rem', borderRadius: '8px', marginBottom: '1rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', color: '#64748b', marginBottom: '0.35rem' }}>
-                <span>Subtotal</span><span>$ {subtotalCarrito.toLocaleString()}</span>
-              </div>
-              {descuentoMonto > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', color: '#dc2626', marginBottom: '0.35rem' }}>
-                  <span>Descuento {descuentoTipo === 'percent' ? `(${descuentoValor}%)` : ''}</span><span>- $ {descuentoMonto.toLocaleString()}</span>
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+                            <div style={{ fontWeight: 'bold', color: '#0f172a' }}>${Number(item.precio).toLocaleString()}</div>
+                            <button onClick={() => quitarDelCarrito(item.id)} style={{ background: 'none', border: 'none', color: '#ef4444', fontSize: '0.75rem', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>Quitar</button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </div>
-              )}
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.1rem', fontWeight: 'bold', color: '#0f172a' }}>
-                <span>Total a pagar</span><span>$ {total.toLocaleString()}</span>
+
               </div>
-            </div>
 
-            {/* Descuentos */}
-            <div style={{ marginBottom: '1rem', padding: '0.75rem', backgroundColor: '#fef2f2', borderRadius: '8px', border: '1px solid #fecaca' }}>
-              <div style={{ fontWeight: 'bold', fontSize: '0.85rem', color: '#991b1b', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}><Tag size={14} /> Descuento</div>
-              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                <select value={descuentoTipo} onChange={e => { setDescuentoTipo(e.target.value); setDescuentoValor(''); }} style={{ padding: '0.4rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', flex: 1 }}>
-                  <option value="none">Sin descuento</option>
-                  <option value="percent">Porcentaje (%)</option>
-                  <option value="fixed">Monto fijo ($)</option>
-                </select>
-                {descuentoTipo !== 'none' && (
-                  <input type="number" min="0" placeholder={descuentoTipo === 'percent' ? '% desc.' : '$ desc.'} value={descuentoValor} onChange={e => setDescuentoValor(e.target.value)} style={{ width: '90px', padding: '0.4rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', textAlign: 'right' }} />
-                )}
-              </div>
-            </div>
-
-            {/* Observaciones */}
-            <div style={{ marginBottom: '1rem' }}>
-              <div style={{ fontWeight: 'bold', fontSize: '0.85rem', color: '#475569', marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}><FileText size={14} /> Observaciones</div>
-              <textarea value={observaciones} onChange={e => setObservaciones(e.target.value)} placeholder="Notas de la venta..." rows={2} style={{ width: '100%', padding: '0.5rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.85rem', resize: 'vertical', fontFamily: 'inherit' }} />
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '1rem' }}>
-              {['Efectivo', 'Mercado Pago', 'Débito', 'Crédito', 'Transferencia'].map(m => (
-                <button
-                  key={m} onClick={() => setMetodoPago(m)}
-                  style={{ padding: '0.6rem', border: '1px solid', borderColor: metodoPago === m ? '#009ee3' : '#e2e8f0', backgroundColor: metodoPago === m ? '#009ee3' : '#f8fafc', color: metodoPago === m ? 'white' : '#1e293b', borderRadius: '8px', fontSize: '0.85rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '0.5rem' }}
+              {/* Bottom Fixed Totals - VISTA RESUMEN */}
+              <div style={{ borderTop: '1px solid #e2e8f0', padding: '1.25rem', backgroundColor: 'white' }}>
+                <div style={{ backgroundColor: '#f1f5f9', padding: '1rem', borderRadius: '8px', marginBottom: '1rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', color: '#64748b', marginBottom: '0.35rem' }}>
+                    <span>Subtotal (Productos)</span><span>$ {subtotalCarrito.toLocaleString()}</span>
+                  </div>
+                  {costoExamenFinal > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', color: '#64748b', marginBottom: '0.35rem' }}>
+                      <span>Examen Visual</span><span>$ {costoExamenFinal.toLocaleString()}</span>
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.1rem', fontWeight: 'bold', color: '#0f172a', marginTop: '0.5rem', paddingTop: '0.5rem', borderTop: '1px solid #cbd5e1' }}>
+                    <span>Total Subtotal</span><span>$ {subtotalGeneral.toLocaleString()}</span>
+                  </div>
+                </div>
+                
+                <button 
+                  onClick={() => {
+                    if (carrito.length === 0 && subtotalGeneral === 0) return alert('Agrega al menos un producto al carrito o selecciona un examen cobrado.');
+                    setCheckoutActivo(true);
+                  }}
+                  style={{ width: '100%', backgroundColor: (carrito.length === 0 && subtotalGeneral === 0) ? '#94a3b8' : '#10b981', color: 'white', padding: '1rem', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '1rem', cursor: (carrito.length === 0 && subtotalGeneral === 0) ? 'not-allowed' : 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem' }}
                 >
-                  {m === 'Efectivo' && <Banknote size={16} />}
-                  {m === 'Mercado Pago' && <CreditCard size={16} color={metodoPago === m ? 'white' : '#009ee3'} />}
-                  {m === 'Débito' && <CreditCard size={16} />}
-                  {m === 'Crédito' && <CreditCard size={16} />}
-                  {m === 'Transferencia' && <Smartphone size={16} />}
-                  {m}
+                  Proceder al Pago <ArrowRight size={20} />
                 </button>
-              ))}
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <span style={{ fontSize: '0.9rem', color: '#64748b' }}>Adelanto / Efectivo</span>
-              <div style={{ position: 'relative', width: '140px' }}>
-                <input 
-                  type="number" value={efectivoRecibido} onChange={e => setEfectivoRecibido(e.target.value)} placeholder={String(total)}
-                  style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#f1f5f9', textAlign: 'right', fontSize: '0.9rem', fontWeight: 'bold', color: '#0f172a' }}
-                />
               </div>
-            </div>
+            </>
+          ) : (
+            <>
+              {/* --- VISTA 2: OPCIONES DE PAGO --- */}
+              <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', padding: '1.25rem' }}>
+                {!isModoAbono && (
+                  <button 
+                    onClick={() => setCheckoutActivo(false)} 
+                    style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem', padding: 0, fontWeight: 'bold', fontSize: '0.9rem' }}
+                  >
+                    <ArrowLeft size={16} /> Volver al Resumen
+                  </button>
+                )}
 
-            <button 
-              onClick={handleProcesar} disabled={carrito.length === 0}
-              style={{ width: '100%', backgroundColor: carrito.length === 0 ? '#94a3b8' : '#3b82f6', color: 'white', padding: '1rem', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '1rem', cursor: carrito.length === 0 ? 'not-allowed' : 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem' }}
-            >
-              <ClipboardList size={20} /> {carrito.length === 0 ? 'Carrito vacío' : 'Procesar Venta'}
-            </button>
-          </div>
+                <h3 style={{ margin: '0 0 1.25rem 0', color: '#1e293b', fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <CreditCard size={20} /> Opciones de Cobro
+                </h3>
+
+                {/* Descuentos */}
+                <div style={{ marginBottom: '1.5rem', padding: '1rem', backgroundColor: '#fef2f2', borderRadius: '8px', border: '1px solid #fecaca' }}>
+                  <div style={{ fontWeight: 'bold', fontSize: '0.85rem', color: '#991b1b', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}><Tag size={14} /> Aplicar Descuento</div>
+                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                    <select value={descuentoTipo} onChange={e => { setDescuentoTipo(e.target.value); setDescuentoValor(''); }} style={{ padding: '0.5rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.9rem', flex: 1, outline: 'none' }}>
+                      <option value="none">Sin descuento</option>
+                      <option value="percent">Porcentaje (%)</option>
+                      <option value="fixed">Monto fijo ($)</option>
+                    </select>
+                    {descuentoTipo !== 'none' && (
+                      <input type="number" min="0" placeholder={descuentoTipo === 'percent' ? '% desc.' : '$ desc.'} value={descuentoValor} onChange={e => setDescuentoValor(e.target.value)} style={{ width: '100px', padding: '0.5rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.9rem', textAlign: 'right', outline: 'none' }} />
+                    )}
+                  </div>
+                </div>
+
+                {/* Observaciones */}
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <div style={{ fontWeight: 'bold', fontSize: '0.85rem', color: '#475569', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}><FileText size={14} /> Observaciones</div>
+                  <textarea value={observaciones} onChange={e => setObservaciones(e.target.value)} placeholder="Notas internas de la venta..." rows={3} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.9rem', resize: 'vertical', fontFamily: 'inherit', outline: 'none' }} />
+                </div>
+
+                {/* Métodos de Pago */}
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <div style={{ fontWeight: 'bold', fontSize: '0.85rem', color: '#475569', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>Método de Pago</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                    {['Efectivo', 'Débito', 'Crédito', 'Transferencia'].map(m => (
+                      <button
+                        key={m} onClick={() => setMetodoPago(m)}
+                        style={{ padding: '0.75rem', border: '2px solid', borderColor: metodoPago === m ? '#3b82f6' : '#e2e8f0', backgroundColor: metodoPago === m ? '#eff6ff' : '#f8fafc', color: metodoPago === m ? '#1e40af' : '#475569', borderRadius: '8px', fontSize: '0.9rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '0.5rem', transition: 'all 0.2s' }}
+                      >
+                        {m === 'Efectivo' && <Banknote size={16} />}
+                        {m === 'Débito' && <CreditCard size={16} />}
+                        {m === 'Crédito' && <CreditCard size={16} />}
+                        {m === 'Transferencia' && <Smartphone size={16} />}
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                  {(metodoPago === 'Crédito' || metodoPago === 'Débito') && (
+                    <div style={{ marginTop: '0.75rem', fontSize: '0.8rem', color: '#059669', display: 'flex', alignItems: 'center', gap: '0.4rem', backgroundColor: '#ecfdf5', padding: '0.5rem', borderRadius: '6px', border: '1px solid #a7f3d0' }}>
+                      <CreditCard size={14} /> Se procesará automáticamente mediante la Terminal Inteligente.
+                    </div>
+                  )}
+                </div>
+
+                {/* Adelanto / Efectivo */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto', paddingTop: '1rem', borderTop: '1px solid #e2e8f0' }}>
+                  <span style={{ fontSize: '0.95rem', color: '#475569', fontWeight: 'bold' }}>Adelanto / Pagado</span>
+                  <div style={{ position: 'relative', width: '150px' }}>
+                    <span style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#64748b', fontSize: '1rem', fontWeight: 'bold' }}>$</span>
+                    <input 
+                      type="number" value={efectivoRecibido} onChange={e => setEfectivoRecibido(e.target.value)} placeholder={String(total)}
+                      style={{ width: '100%', padding: '0.75rem 0.75rem 0.75rem 1.75rem', borderRadius: '8px', border: '2px solid #cbd5e1', backgroundColor: '#f8fafc', textAlign: 'right', fontSize: '1.05rem', fontWeight: 'bold', color: '#0f172a', outline: 'none' }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Bottom Fixed Totals - VISTA PAGO */}
+              <div style={{ borderTop: '1px solid #e2e8f0', padding: '1.25rem', backgroundColor: 'white' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', padding: '1rem', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <span style={{ color: '#64748b', fontSize: '1.1rem' }}>{isModoAbono ? 'Saldo Pendiente' : 'Total a Pagar'}</span>
+                  <span style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#0f172a' }}>$ {isModoAbono ? Number(ventaAbonoOriginal?.saldoPendiente || 0).toLocaleString() : total.toLocaleString()}</span>
+                </div>
+                
+                <button 
+                  onClick={handleProcesar} disabled={carrito.length === 0 && subtotalGeneral === 0 && !isModoAbono}
+                  style={{ width: '100%', backgroundColor: (carrito.length === 0 && subtotalGeneral === 0 && !isModoAbono) ? '#94a3b8' : '#3b82f6', color: 'white', padding: '1rem', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '1rem', cursor: (carrito.length === 0 && subtotalGeneral === 0 && !isModoAbono) ? 'not-allowed' : 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem', transition: 'background-color 0.2s' }}
+                >
+                  <ClipboardList size={20} /> {isModoAbono ? 'Registrar Abono' : 'Procesar Venta'}
+                </button>
+              </div>
+            </>
+          )}
+
         </div>
       </div>
 
@@ -878,16 +935,6 @@ const PuntoDeVenta = () => {
         />
       )}
 
-      {modalRegistroAdicional && (
-        <FormularioExamen 
-          title="Receta para Persona Adicional"
-          onGuardar={(examenData) => {
-            setAdicionalExamen({ od: examenData.od, oi: examenData.oi });
-            setModalRegistroAdicional(false);
-          }}
-          onCancelar={() => setModalRegistroAdicional(false)}
-        />
-      )}
 
       {modalMercadoPago && (
         <ModalMercadoPago

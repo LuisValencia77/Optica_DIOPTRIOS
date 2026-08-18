@@ -1,219 +1,297 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useDatabase } from '../../context/DatabaseContext';
-import { Mail, PackageCheck, User, Calendar, DollarSign } from 'lucide-react';
+import { Download, PackageCheck } from 'lucide-react';
+import { generarPDFPedidos } from '../../utils/pdfGeneratorPedidos';
 
-const PedidosList = () => {
-  const { pedidos, pacientes, notificarPedidoListo, actualizarEstadoPedido } = useDatabase();
-  const [filtroEstado, setFiltroEstado] = useState('Todos');
-  const [busqueda, setBusqueda] = useState('');
-  const [loadingMail, setLoadingMail] = useState({});
+const formatFraction = (num) => {
+  if (num === 0) return '0';
+  const integerPart = Math.floor(num);
+  const decimalPart = num - integerPart;
+  
+  if (decimalPart === 0) return String(integerPart);
+  
+  const fractionStr = '1/2';
+  if (integerPart === 0) return fractionStr;
+  return `${integerPart} ${fractionStr}`;
+};
 
-  const handleNotificar = async (pedidoId) => {
-    setLoadingMail(prev => ({ ...prev, [pedidoId]: true }));
-    await notificarPedidoListo(pedidoId);
-    setLoadingMail(prev => ({ ...prev, [pedidoId]: false }));
+const PedidosListTab = () => {
+  const { ventas, examenes, pacientes, marcarLentesTerminados } = useDatabase();
+  const [distribuidoresLocal, setDistribuidoresLocal] = useState({});
+  const [observacionesLocal, setObservacionesLocal] = useState({});
+  const [extrasLocal, setExtrasLocal] = useState({});
+
+  const examenesPorId = useMemo(() => {
+    const map = {};
+    (examenes || []).forEach(ex => {
+      map[String(ex.id)] = ex;
+    });
+    return map;
+  }, [examenes]);
+
+  const pacientesPorId = useMemo(() => {
+    const map = {};
+    (pacientes || []).forEach(p => {
+      map[String(p.id)] = `${p.nombre} ${p.apellidos}`;
+    });
+    return map;
+  }, [pacientes]);
+
+  // Filtrar y procesar datos
+  const filasPedidos = useMemo(() => {
+    const filas = [];
+    // Recorremos las ventas que tienen lentes pendientes
+    ventas.forEach(venta => {
+      if (venta.lentesTerminados) return; // Ya se entregó o no necesita pedido
+      
+      const config = venta.detallesLentes?.config || [];
+      config.forEach((paquete, pkgIndex) => {
+        const materialStr = paquete.material?.nombre || '';
+        const proteccionStr = paquete.tratamiento?.nombre || '';
+        const receta = examenesPorId[String(venta.examenId)] || {};
+        
+        const od = receta.od || { esfera: '', cilindro: '', eje: '' };
+        const oi = receta.oi || { esfera: '', cilindro: '', eje: '' };
+        const adicion = receta.adicion || '';
+        const cant = Number(paquete.cantidadVenta || 1);
+        
+        // Identificador único para el input de estado
+        const rowIdBase = `${venta.id}-${pkgIndex}`;
+
+        // Verificamos si ambos ojos son iguales para agrupar
+        const sonIguales = (od.esfera === oi.esfera && od.cilindro === oi.cilindro && od.eje === oi.eje);
+        const pacienteNombre = pacientesPorId[String(venta.pacienteId)] || 'Desconocido';
+
+        if (sonIguales) {
+          const rowId = `${rowIdBase}-ambos`;
+          const extraPares = Number(extrasLocal[rowId] || 0);
+          filas.push({
+            id: rowId,
+            ventaId: venta.id,
+            paciente: pacienteNombre,
+            ojo: 'Ambos Ojos',
+            material: materialStr,
+            proteccion: proteccionStr,
+            esfera: od.esfera || 'Plano',
+            cilindro: od.cilindro || '0.00',
+            adicion: adicion || '',
+            pares: formatFraction(cant),
+            base: '',
+            piezasExtra: extraPares > 0 ? formatFraction(extraPares) : '',
+            paresTotales: formatFraction(cant + extraPares), // 1 par = 2 micas
+            distribuidor: distribuidoresLocal[rowId] || '',
+            observaciones: observacionesLocal[rowId] || ''
+          });
+        } else {
+          // Si son distintos, se dividen
+          const rowIdOd = `${rowIdBase}-od`;
+          const extraParesOd = Number(extrasLocal[rowIdOd] || 0);
+          filas.push({
+            id: rowIdOd,
+            ventaId: venta.id,
+            paciente: pacienteNombre,
+            ojo: 'OD (Derecho)',
+            material: materialStr,
+            proteccion: proteccionStr,
+            esfera: od.esfera || 'Plano',
+            cilindro: od.cilindro || '0.00',
+            adicion: adicion || '',
+            pares: formatFraction(cant * 0.5),
+            base: '',
+            piezasExtra: extraParesOd > 0 ? formatFraction(extraParesOd) : '',
+            paresTotales: formatFraction((cant * 0.5) + extraParesOd),
+            distribuidor: distribuidoresLocal[rowIdOd] || '',
+            observaciones: observacionesLocal[rowIdOd] || ''
+          });
+          
+          const rowIdOi = `${rowIdBase}-oi`;
+          const extraParesOi = Number(extrasLocal[rowIdOi] || 0);
+          filas.push({
+            id: rowIdOi,
+            ventaId: venta.id,
+            paciente: pacienteNombre,
+            ojo: 'OI (Izquierdo)',
+            material: materialStr,
+            proteccion: proteccionStr,
+            esfera: oi.esfera || 'Plano',
+            cilindro: oi.cilindro || '0.00',
+            adicion: adicion || '',
+            pares: formatFraction(cant * 0.5),
+            base: '',
+            piezasExtra: extraParesOi > 0 ? formatFraction(extraParesOi) : '',
+            paresTotales: formatFraction((cant * 0.5) + extraParesOi),
+            distribuidor: distribuidoresLocal[rowIdOi] || '',
+            observaciones: observacionesLocal[rowIdOi] || ''
+          });
+        }
+      });
+    });
+    return filas;
+  }, [ventas, examenesPorId, pacientesPorId, distribuidoresLocal, observacionesLocal, extrasLocal]);
+
+  const filasPorPaciente = useMemo(() => {
+    const grupos = {};
+    filasPedidos.forEach(f => {
+      if (!grupos[f.paciente]) grupos[f.paciente] = [];
+      grupos[f.paciente].push(f);
+    });
+    return grupos;
+  }, [filasPedidos]);
+
+  const handleExportarPDF = () => {
+    // Usar la función importada pasándole las filas procesadas
+    generarPDFPedidos(filasPedidos);
   };
 
-  const handleCambiarEstado = async (pedidoId, nuevoEstado) => {
-    await actualizarEstadoPedido(pedidoId, nuevoEstado);
+  const handleInputChange = (id, campo, valor) => {
+    if (campo === 'distribuidor') {
+      setDistribuidoresLocal(prev => ({ ...prev, [id]: valor }));
+    } else if (campo === 'observaciones') {
+      setObservacionesLocal(prev => ({ ...prev, [id]: valor }));
+    } else if (campo === 'piezasExtra') {
+      setExtrasLocal(prev => ({ ...prev, [id]: valor }));
+    }
   };
-
-  const pedidosFiltrados = pedidos.filter(ped => {
-    const paciente = pacientes.find(p => p.id.toString() === (ped.pacienteId || '').toString());
-    const nombrePaciente = paciente ? `${paciente.nombre} ${paciente.apellidos || ''}`.trim().toLowerCase() : 'mostrador';
-    const idPedidoStr = (ped.id || '').toString();
-
-    const coincideBusqueda = nombrePaciente.includes(busqueda.toLowerCase()) || idPedidoStr.includes(busqueda);
-    const coincideEstado = filtroEstado === 'Todos' || ped.estado === filtroEstado;
-
-    return coincideBusqueda && coincideEstado;
-  });
 
   return (
     <div style={{ padding: '0.5rem' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.5rem' }}>
         <div>
-          <h2 style={{ color: '#1e293b', margin: 0 }}>Pedidos Realizados</h2>
+          <h2 style={{ color: '#1e293b', margin: 0 }}>Pedidos a Distribuidores</h2>
           <p style={{ color: '#64748b', margin: '0.25rem 0 0 0', fontSize: '0.9rem' }}>
-            Gestiona pedidos de clientes y notifica cuando los productos están listos para ser recogidos.
+            Listado de cristales y materiales requeridos para ventas pendientes.
           </p>
         </div>
+        <button
+          onClick={handleExportarPDF}
+          disabled={filasPedidos.length === 0}
+          style={{
+            padding: '0.75rem 1.5rem',
+            backgroundColor: filasPedidos.length === 0 ? '#cbd5e1' : '#10b981',
+            color: 'white',
+            border: 'none',
+            borderRadius: '8px',
+            fontWeight: 'bold',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            cursor: filasPedidos.length === 0 ? 'not-allowed' : 'pointer'
+          }}
+        >
+          <Download size={20} />
+          Exportar a PDF
+        </button>
       </div>
 
-      {/* Filtros y búsqueda */}
-      <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginBottom: '1.5rem', backgroundColor: '#f8fafc', padding: '1rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-        <div style={{ flex: 1, minWidth: '220px' }}>
-          <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', color: '#475569', marginBottom: '0.25rem' }}>Buscar por Cliente o Pedido ID</label>
-          <input
-            type="text"
-            placeholder="Ej. Juan Pérez o 1712..."
-            value={busqueda}
-            onChange={(e) => setBusqueda(e.target.value)}
-            style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.9rem' }}
-          />
-        </div>
-
-        <div style={{ minWidth: '180px' }}>
-          <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', color: '#475569', marginBottom: '0.25rem' }}>Filtrar por Estado</label>
-          <select
-            value={filtroEstado}
-            onChange={(e) => setFiltroEstado(e.target.value)}
-            style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.9rem' }}
-          >
-            <option value="Todos">Todos los estados</option>
-            <option value="Pendiente">Pendiente</option>
-            <option value="En Proceso">En Proceso</option>
-            <option value="Listo para Recoger">Listo para Recoger</option>
-            <option value="Entregado">Entregado</option>
-          </select>
-        </div>
-      </div>
-
-      {/* Lista de Pedidos */}
-      {pedidosFiltrados.length === 0 ? (
+      {filasPedidos.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px dashed #cbd5e1' }}>
           <PackageCheck size={48} style={{ opacity: 0.5, marginBottom: '0.5rem' }} />
-          <p style={{ fontSize: '1.1rem', margin: 0 }}>No se encontraron pedidos registrados.</p>
+          <p style={{ fontSize: '1.1rem', margin: 0 }}>No hay cristales pendientes por pedir.</p>
+          <span style={{ fontSize: '0.85rem' }}>Las ventas marcadas como "Lentes Terminados" no aparecen aquí.</span>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1rem' }}>
-
-          {pedidosFiltrados.map((pedido) => {
-            const paciente = pacientes.find((p) => p.id.toString() === (pedido.pacienteId || '').toString());
-            const productos = typeof pedido.productos === 'string' ? JSON.parse(pedido.productos) : (pedido.productos || []);
-
-            let badgeBg = '#fef3c7';
-            let badgeColor = '#b45309';
-            if (pedido.estado === 'Listo para Recoger') {
-              badgeBg = '#dcfce7';
-              badgeColor = '#15803d';
-            } else if (pedido.estado === 'Entregado') {
-              badgeBg = '#e0f2fe';
-              badgeColor = '#0369a1';
-            }
-
-            return (
-              <div
-                key={pedido.id}
-                style={{
-                  backgroundColor: '#ffffff',
-                  borderRadius: '10px',
-                  border: '1px solid #e2e8f0',
-                  boxShadow: '0 2px 4px rgba(0,0,0,0.04)',
-                  padding: '1.25rem',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  justify: 'space-between',
-                }}
-              >
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
-                    <div>
-                      <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 'bold' }}>PEDIDO #{pedido.id}</span>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.2rem' }}>
-                        <User size={16} color="#475569" />
-                        <strong style={{ color: '#1e293b', fontSize: '1rem' }}>{paciente ? `${paciente.nombre} ${paciente.apellidos || ''}`.trim() : 'Venta General / Mostrador'}</strong>
-                      </div>
-                      {paciente?.correo && (
-                        <span style={{ fontSize: '0.8rem', color: '#2563eb', display: 'block', marginTop: '0.1rem' }}>
-                          📧 {paciente.correo}
-                        </span>
-                      )}
-                    </div>
-                    <span
-                      style={{
-                        backgroundColor: badgeBg,
-                        color: badgeColor,
-                        padding: '0.25rem 0.6rem',
-                        borderRadius: '12px',
-                        fontSize: '0.75rem',
-                        fontWeight: 'bold',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {pedido.estado || 'Pendiente'}
-                    </span>
-                  </div>
-
-                  <div style={{ borderTop: '1px solid #f1f5f9', borderBottom: '1px solid #f1f5f9', padding: '0.75rem 0', margin: '0.75rem 0' }}>
-                    <div style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#64748b', marginBottom: '0.4rem' }}>Artículos / Lentes:</div>
-                    {productos.length === 0 ? (
-                      <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Sin detalle de productos</span>
-                    ) : (
-                      productos.map((prod, idx) => (
-                        <div key={idx} style={{ fontSize: '0.85rem', color: '#334155', display: 'flex', justifyContent: 'space-between', marginBottom: '0.2rem' }}>
-                          <span>• {prod.marca || ''} {prod.modelo || ''} ({prod.tipo || 'Producto'})</span>
-                          <span style={{ fontWeight: 'bold' }}>x{prod.cantidadVenta || prod.cantidad || 1}</span>
-                        </div>
-                      ))
-                    )}
-                  </div>
-
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem', color: '#64748b', marginBottom: '0.5rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                      <Calendar size={14} />
-                      <span>{new Date(pedido.fecha).toLocaleDateString()}</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: '#16a34a', fontWeight: 'bold', fontSize: '1.05rem' }}>
-                      <DollarSign size={16} />
-                      <span>${(Number(pedido.total) || 0).toFixed(2)}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Acciones del Pedido */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
-                  <button
-                    onClick={() => handleNotificar(pedido.id)}
-                    disabled={loadingMail[pedido.id] || !paciente?.correo}
-                    style={{
-                      width: '100%',
-                      padding: '0.6rem',
-                      backgroundColor: paciente?.correo ? '#2563eb' : '#cbd5e1',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '6px',
-                      fontWeight: 'bold',
-                      fontSize: '0.85rem',
-                      cursor: paciente?.correo ? 'pointer' : 'not-allowed',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justify: 'center',
-                      gap: '0.5rem',
-                    }}
-                    title={!paciente?.correo ? 'El paciente no tiene un correo registrado' : 'Mandar correo para recoger'}
-                  >
-                    <Mail size={16} />
-                    {loadingMail[pedido.id] ? 'Enviando Correo...' : 'Mandar Correo: Listo para Recojer'}
-                  </button>
-
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <select
-                      value={pedido.estado || 'Pendiente'}
-                      onChange={(e) => handleCambiarEstado(pedido.id, e.target.value)}
-                      style={{
-                        flex: 1,
-                        padding: '0.4rem',
-                        fontSize: '0.8rem',
-                        borderRadius: '4px',
-                        border: '1px solid #cbd5e1',
-                        backgroundColor: '#f8fafc',
-                      }}
-                    >
-                      <option value="Pendiente">Pendiente</option>
-                      <option value="En Proceso">En Proceso</option>
-                      <option value="Listo para Recoger">Listo para Recoger</option>
-                      <option value="Entregado">Entregado</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+        <div style={{ overflowX: 'auto', backgroundColor: 'white', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
+            <thead>
+              <tr style={{ backgroundColor: '#f1f5f9', color: '#475569', borderBottom: '2px solid #cbd5e1' }}>
+                <th style={{ padding: '0.75rem 1rem' }}>MATERIAL</th>
+                <th style={{ padding: '0.75rem 1rem' }}>PROTECCIÓN</th>
+                <th style={{ padding: '0.75rem 1rem' }}>ESFERA</th>
+                <th style={{ padding: '0.75rem 1rem' }}>CILINDRO</th>
+                <th style={{ padding: '0.75rem 1rem' }}>ADICIÓN</th>
+                <th style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>PARES</th>
+                <th style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>PARES TOT.</th>
+                <th style={{ padding: '0.75rem 1rem', width: '15%' }}>DISTRIBUIDOR</th>
+                <th style={{ padding: '0.75rem 1rem', width: '20%' }}>OBSERVACIONES</th>
+                <th style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>EXTRA</th>
+                <th style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>ACCIONES</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(filasPorPaciente).map(([pacienteNombre, filas]) => (
+                <React.Fragment key={pacienteNombre}>
+                  <tr style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                    <td colSpan="11" style={{ padding: '0.5rem 1rem', fontWeight: 'bold', color: '#0f172a', fontSize: '0.9rem' }}>
+                      👤 Paciente: {pacienteNombre}
+                    </td>
+                  </tr>
+                  {filas.map((f) => (
+                    <tr key={f.id} style={{ borderBottom: '1px solid #e2e8f0', color: '#1e293b' }}>
+                      <td style={{ padding: '0.75rem 1rem' }}>
+                        <div>{f.material || '-'}</div>
+                        <div style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 'bold', marginTop: '0.25rem' }}>{f.ojo}</div>
+                      </td>
+                      <td style={{ padding: '0.75rem 1rem' }}>{f.proteccion || '-'}</td>
+                      <td style={{ padding: '0.75rem 1rem', fontWeight: 'bold' }}>{f.esfera}</td>
+                      <td style={{ padding: '0.75rem 1rem', fontWeight: 'bold' }}>{f.cilindro}</td>
+                      <td style={{ padding: '0.75rem 1rem' }}>{f.adicion || '-'}</td>
+                      <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>{f.pares}</td>
+                      <td style={{ padding: '0.75rem 1rem', textAlign: 'center', fontWeight: 'bold', color: '#2563eb' }}>{f.paresTotales}</td>
+                      <td style={{ padding: '0.5rem' }}>
+                        <input 
+                          type="text" 
+                          value={f.distribuidor} 
+                          onChange={(e) => handleInputChange(f.id, 'distribuidor', e.target.value)}
+                          placeholder="Ej. Lab Visión"
+                          style={{ width: '100%', padding: '0.4rem', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.8rem' }}
+                        />
+                      </td>
+                      <td style={{ padding: '0.5rem' }}>
+                        <input 
+                          type="text" 
+                          value={f.observaciones} 
+                          onChange={(e) => handleInputChange(f.id, 'observaciones', e.target.value)}
+                          placeholder="Notas..."
+                          style={{ width: '100%', padding: '0.4rem', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.8rem' }}
+                        />
+                      </td>
+                      <td style={{ padding: '0.5rem', textAlign: 'center' }}>
+                        <select
+                          value={extrasLocal[f.id] || 0}
+                          onChange={(e) => handleInputChange(f.id, 'piezasExtra', e.target.value)}
+                          style={{ padding: '0.4rem', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.8rem' }}
+                        >
+                          <option value={0}>0</option>
+                          <option value={0.5}>1/2 par</option>
+                          <option value={1}>1 par</option>
+                          <option value={1.5}>1 1/2 pares</option>
+                          <option value={2}>2 pares</option>
+                          <option value={2.5}>2 1/2 pares</option>
+                          <option value={3}>3 pares</option>
+                        </select>
+                      </td>
+                      <td style={{ padding: '0.5rem', textAlign: 'center' }}>
+                        <button
+                          onClick={() => {
+                            if (window.confirm('¿Marcar todos los cristales de esta venta como terminados?')) {
+                              marcarLentesTerminados(f.ventaId);
+                            }
+                          }}
+                          style={{
+                            padding: '0.4rem 0.8rem',
+                            backgroundColor: '#3b82f6',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            fontSize: '0.8rem',
+                            cursor: 'pointer',
+                            fontWeight: 'bold'
+                          }}
+                          title="Marcar Lentes Recibidos (Esto los quitará de esta lista)"
+                        >
+                          ✓ Recibidos
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </React.Fragment>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
   );
 };
 
-export default PedidosList;
+export default PedidosListTab;

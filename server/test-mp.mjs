@@ -11,11 +11,11 @@ const sellerUser = process.env.MERCADOPAGO_TEST_SELLER_USER;
 const buyerUser = process.env.MERCADOPAGO_TEST_BUYER_USER;
 
 console.log('\n============================================================');
-console.log('🚀 DEMOSTRACIÓN DE LOS 6 ESCENARIOS MERCADO PAGO PRESENCIAL');
+console.log(' DEMOSTRACIÓN DE LOS 6 ESCENARIOS MERCADO PAGO PRESENCIAL');
 console.log('============================================================\n');
 
-console.log('📌 Credenciales Configuradas (.env):');
-console.log(` - Access Token: ${token ? (token.substring(0, 20) + '...') : '❌ NO CONFIGURADO'}`);
+console.log(' Credenciales Configuradas (.env):');
+console.log(` - Access Token: ${token ? (token.substring(0, 20) + '...') : ' NO CONFIGURADO'}`);
 console.log(` - Vendedor Test: ${sellerUser}`);
 console.log(` - Comprador Test: ${buyerUser}\n`);
 
@@ -24,7 +24,7 @@ async function ejecutarDemostracion() {
   const mockOrderId = `ORD${Date.now()}TEST`;
 
   console.log('------------------------------------------------------------');
-  console.log('🔹 PASO 1: Creando Orden de Pago (POST /v1/orders)');
+  console.log(' PASO 1: Creando Orden de Pago (POST /v1/orders)');
   console.log('------------------------------------------------------------');
 
   const payloadOrden = {
@@ -38,14 +38,14 @@ async function ejecutarDemostracion() {
     }
   };
 
-  console.log('📤 Solicitud enviada:', JSON.stringify(payloadOrden, null, 2));
-  console.log(`✅ Orden generada con ID: ${mockOrderId}\n`);
+  console.log(' Solicitud enviada:', JSON.stringify(payloadOrden, null, 2));
+  console.log(` Orden generada con ID: ${mockOrderId}\n`);
 
   // ------------------------------------------------------------
   // ESCENARIO A: COBRO EXITOSO
   // ------------------------------------------------------------
   console.log('============================================================');
-  console.log('💚 ESCENARIO A: SIMULACIÓN DE COBRO EXITOSO (processed)');
+  console.log(' ESCENARIO A: SIMULACIÓN DE COBRO EXITOSO (processed)');
   console.log('============================================================');
   const payloadExito = {
     status: 'processed',
@@ -54,7 +54,7 @@ async function ejecutarDemostracion() {
     payment_method_id: 'visa',
     status_detail: 'accredited'
   };
-  console.log('📤 Payload Evento Enviado (POST /v1/orders/{order_id}/events):');
+  console.log(' Payload Evento Enviado (POST /v1/orders/{order_id}/events):');
   console.log(JSON.stringify(payloadExito, null, 2));
 
   const resExitoJson = {
@@ -81,15 +81,15 @@ async function ejecutarDemostracion() {
     type: "order",
     user_id: sellerUser
   };
-  console.log('📥 Respuesta Webhook Acreditada:');
+  console.log(' Respuesta Webhook Acreditada:');
   console.log(JSON.stringify(resExitoJson, null, 2));
-  console.log('✅ Estado: PAGO ACREDITADO -> Venta registrada en BD.\n');
+  console.log(' Estado: PAGO ACREDITADO -> Venta registrada en BD.\n');
 
   // ------------------------------------------------------------
   // ESCENARIO B: COBRO FALLIDO / RECHAZADO
   // ------------------------------------------------------------
   console.log('============================================================');
-  console.log('💔 ESCENARIO B: SIMULACIÓN DE FALLA DE PAGO (failed)');
+  console.log(' ESCENARIO B: SIMULACIÓN DE FALLA DE PAGO (failed)');
   console.log('============================================================');
   const payloadFalla = {
     status: 'failed',
@@ -98,7 +98,7 @@ async function ejecutarDemostracion() {
     payment_method_id: 'visa',
     status_detail: 'insufficient_amount'
   };
-  console.log('📤 Payload Evento Falla Enviado (POST /v1/orders/{order_id}/events):');
+  console.log(' Payload Evento Falla Enviado (POST /v1/orders/{order_id}/events):');
   console.log(JSON.stringify(payloadFalla, null, 2));
 
   const resFallaJson = {
@@ -128,18 +128,18 @@ async function ejecutarDemostracion() {
     type: "order",
     user_id: sellerUser
   };
-  console.log('📥 Respuesta Webhook Rechazada:');
+  console.log(' Respuesta Webhook Rechazada:');
   console.log(JSON.stringify(resFallaJson, null, 2));
-  console.log('❌ Estado: PAGO RECHAZADO -> Registro en BD BLOQUEADO.\n');
+  console.log(' Estado: PAGO RECHAZADO -> Registro en BD BLOQUEADO.\n');
 
   // ------------------------------------------------------------
   // ESCENARIO C: REEMBOLSO DE ORDEN
   // ------------------------------------------------------------
   console.log('============================================================');
-  console.log('🔄 ESCENARIO C: SIMULACIÓN DE REEMBOLSO DE ORDEN (refunded)');
+  console.log(' ESCENARIO C: SIMULACIÓN DE REEMBOLSO DE ORDEN (refunded)');
   console.log('============================================================');
   const payloadReembolso = { status: 'refunded' };
-  console.log('📤 Payload Evento Reembolso Enviado (POST /v1/orders/{order_id}/events):');
+  console.log(' Payload Evento Reembolso Enviado (POST /v1/orders/{order_id}/events):');
   console.log(JSON.stringify(payloadReembolso, null, 2));
 
   const resReembolsoJson = {
@@ -160,18 +160,18 @@ async function ejecutarDemostracion() {
     type: "order",
     user_id: sellerUser
   };
-  console.log('📥 Respuesta Webhook Reembolso Recibido:');
+  console.log(' Respuesta Webhook Reembolso Recibido:');
   console.log(JSON.stringify(resReembolsoJson, null, 2));
-  console.log('🔄 Estado: ORDEN REEMBOLSADA -> Venta marcada como Reembolsada en BD.\n');
+  console.log(' Estado: ORDEN REEMBOLSADA -> Venta marcada como Reembolsada en BD.\n');
 
   // ------------------------------------------------------------
   // ESCENARIO D: CANCELACIÓN DE ORDEN
   // ------------------------------------------------------------
   console.log('============================================================');
-  console.log('🚫 ESCENARIO D: SIMULACIÓN DE CANCELACIÓN DE ORDEN (canceled)');
+  console.log(' ESCENARIO D: SIMULACIÓN DE CANCELACIÓN DE ORDEN (canceled)');
   console.log('============================================================');
   const payloadCancelacion = { status: 'canceled' };
-  console.log('📤 Payload Evento Cancelación Enviado (POST /v1/orders/{order_id}/events):');
+  console.log(' Payload Evento Cancelación Enviado (POST /v1/orders/{order_id}/events):');
   console.log(JSON.stringify(payloadCancelacion, null, 2));
 
   const resCancelacionJson = {
@@ -199,18 +199,18 @@ async function ejecutarDemostracion() {
     type: "order",
     user_id: sellerUser
   };
-  console.log('📥 Respuesta Webhook Cancelación Recibido:');
+  console.log(' Respuesta Webhook Cancelación Recibido:');
   console.log(JSON.stringify(resCancelacionJson, null, 2));
-  console.log('🚫 Estado: ORDEN CANCELADA EN TERMINAL -> Registro en BD BLOQUEADO.\n');
+  console.log(' Estado: ORDEN CANCELADA EN TERMINAL -> Registro en BD BLOQUEADO.\n');
 
   // ------------------------------------------------------------
   // ESCENARIO E: EXPIRACIÓN DE ORDEN
   // ------------------------------------------------------------
   console.log('============================================================');
-  console.log('⏳ ESCENARIO E: SIMULACIÓN DE EXPIRACIÓN DE ORDEN (expired)');
+  console.log(' ESCENARIO E: SIMULACIÓN DE EXPIRACIÓN DE ORDEN (expired)');
   console.log('============================================================');
   const payloadExpiracion = { status: 'expired' };
-  console.log('📤 Payload Evento Expiración Enviado (POST /v1/orders/{order_id}/events):');
+  console.log(' Payload Evento Expiración Enviado (POST /v1/orders/{order_id}/events):');
   console.log(JSON.stringify(payloadExpiracion, null, 2));
 
   const resExpiracionJson = {
@@ -238,18 +238,18 @@ async function ejecutarDemostracion() {
     type: "order",
     user_id: sellerUser
   };
-  console.log('📥 Respuesta Webhook Expiración Recibido:');
+  console.log(' Respuesta Webhook Expiración Recibido:');
   console.log(JSON.stringify(resExpiracionJson, null, 2));
-  console.log('⏳ Estado: ORDEN EXPIRADA -> Timeout Presencial -> Registro en BD BLOQUEADO.\n');
+  console.log(' Estado: ORDEN EXPIRADA -> Timeout Presencial -> Registro en BD BLOQUEADO.\n');
 
   // ------------------------------------------------------------
   // ESCENARIO F: ACCIÓN REQUERIDA EN TERMINAL
   // ------------------------------------------------------------
   console.log('============================================================');
-  console.log('📱 ESCENARIO F: SIMULACIÓN DE ACCIÓN REQUERIDA (action_required)');
+  console.log(' ESCENARIO F: SIMULACIÓN DE ACCIÓN REQUERIDA (action_required)');
   console.log('============================================================');
   const payloadAccion = { status: 'action_required' };
-  console.log('📤 Payload Evento Acción Requerida Enviado (POST /v1/orders/{order_id}/events):');
+  console.log(' Payload Evento Acción Requerida Enviado (POST /v1/orders/{order_id}/events):');
   console.log(JSON.stringify(payloadAccion, null, 2));
 
   const resAccionJson = {
@@ -269,20 +269,20 @@ async function ejecutarDemostracion() {
     type: "order",
     user_id: sellerUser
   };
-  console.log('📥 Respuesta Webhook Acción Requerida Recibido:');
+  console.log(' Respuesta Webhook Acción Requerida Recibido:');
   console.log(JSON.stringify(resAccionJson, null, 2));
-  console.log('📱 Estado: ACCIÓN REQUERIDA (Ingresar NIP/Tarjeta) -> Esperando confirmación.\n');
+  console.log(' Estado: ACCIÓN REQUERIDA (Ingresar NIP/Tarjeta) -> Esperando confirmación.\n');
 
   console.log('============================================================');
-  console.log('🎉 RESUMEN DE LA PRUEBA EN TERMINAL (LOS 6 ESCENARIOS):');
+  console.log(' RESUMEN DE LA PRUEBA EN TERMINAL (LOS 6 ESCENARIOS):');
   console.log('============================================================');
-  console.log(` 💚 1. COBRO EXITOSO (processed / accredited)         : FUNCIONANDO`);
-  console.log(` 💔 2. RECHAZO DE PAGO (failed / insufficient_amount)   : MANEJADO Y BLOQUEADO`);
-  console.log(` 🔄 3. REEMBOLSO DE PAGO (refunded / order.refunded)     : MANEJADO (Venta Reembolsada)`);
-  console.log(` 🚫 4. CANCELACIÓN DE ORDEN (canceled / canceled_terminal): MANEJADO Y BLOQUEADO`);
-  console.log(` ⏳ 5. EXPIRACIÓN DE ORDEN (expired / order.expired)     : MANEJADO Y BLOQUEADO`);
-  console.log(` 📱 6. ACCIÓN REQUERIDA (action_required / check_terminal): MANEJADO (Esperando Cliente)`);
-  console.log(` 🔑 CREDENCIALES CONFIGURADAS                        : VALIDADAS (.env)`);
+  console.log(`  1. COBRO EXITOSO (processed / accredited)         : FUNCIONANDO`);
+  console.log(`  2. RECHAZO DE PAGO (failed / insufficient_amount)   : MANEJADO Y BLOQUEADO`);
+  console.log(`  3. REEMBOLSO DE PAGO (refunded / order.refunded)     : MANEJADO (Venta Reembolsada)`);
+  console.log(`  4. CANCELACIÓN DE ORDEN (canceled / canceled_terminal): MANEJADO Y BLOQUEADO`);
+  console.log(`  5. EXPIRACIÓN DE ORDEN (expired / order.expired)     : MANEJADO Y BLOQUEADO`);
+  console.log(`  6. ACCIÓN REQUERIDA (action_required / check_terminal): MANEJADO (Esperando Cliente)`);
+  console.log(`  CREDENCIALES CONFIGURADAS                        : VALIDADAS (.env)`);
   console.log('============================================================\n');
 }
 

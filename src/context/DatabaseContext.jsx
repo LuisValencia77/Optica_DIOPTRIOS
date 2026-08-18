@@ -78,7 +78,7 @@ export const DatabaseProvider = ({ children }) => {
         setLoading(false);
       } catch (error) {
         if (cancelled) return;
-        console.error('❌ Error cargando datos iniciales desde PostgreSQL:', error);
+        console.error(' Error cargando datos iniciales desde PostgreSQL:', error);
         if (attempt < 5) {
           window.setTimeout(() => fetchInitialData(attempt + 1), 1000 * (attempt + 1));
         } else {
@@ -108,7 +108,7 @@ export const DatabaseProvider = ({ children }) => {
       const reader = new FileReader();
       reader.onload = () => resolve(reader.result); // Retorna la cadena Base64
       reader.onerror = (error) => {
-        console.error('❌ Error convirtiendo imagen a Base64:', error);
+        console.error(' Error convirtiendo imagen a Base64:', error);
         alert('No se pudo procesar la imagen.');
         reject(error);
       };
@@ -133,7 +133,7 @@ export const DatabaseProvider = ({ children }) => {
       setProductos(prev => [created, ...prev]);
       return created;
     } catch (error) {
-      console.error('❌ Error creando producto:', error);
+      console.error(' Error creando producto:', error);
       alert('Error en BD al guardar producto: ' + error.message);
     }
   };
@@ -171,7 +171,7 @@ export const DatabaseProvider = ({ children }) => {
       setPacientes(prev => [created, ...prev]);
       return created;
     } catch (error) {
-      console.error('❌ Error creando paciente:', error);
+      console.error(' Error creando paciente:', error);
       alert('Error en BD al guardar paciente: ' + error.message);
       return false;
     }
@@ -234,12 +234,12 @@ export const DatabaseProvider = ({ children }) => {
           setPedidos(prev => [pedidoNormalizado, ...prev]);
         }
       } catch (pErr) {
-        console.warn('⚠️ No se pudo crear pedido automático:', pErr.message);
+        console.warn('️ No se pudo crear pedido automático:', pErr.message);
       }
 
       return examenNormalizado;
     } catch (error) {
-      console.error('❌ Error creando examen:', error);
+      console.error(' Error creando examen:', error);
       alert('Error en BD al guardar el examen: ' + error.message);
     }
   };
@@ -269,7 +269,7 @@ export const DatabaseProvider = ({ children }) => {
       descontarStock(ventaNormalizada.productos || []);
       return ventaNormalizada;
     } catch (error) {
-      console.error('❌ Error registrando venta:', error);
+      console.error(' Error registrando venta:', error);
       alert('Error en BD al guardar la venta: ' + error.message);
     }
   };
@@ -283,6 +283,22 @@ export const DatabaseProvider = ({ children }) => {
       }
       return prod;
     }));
+  };
+
+  const marcarLentesTerminados = async (ventaId) => {
+    try {
+      const response = await fetch(`${API_BASE}/ventas/${ventaId}/lentes-terminados`, {
+        method: 'PUT',
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Error al actualizar lentes terminados');
+      }
+      setVentas(prev => prev.map(v => v.id.toString() === ventaId.toString() ? { ...v, lentesTerminados: true, motivoNoTerminado: '' } : v));
+    } catch (error) {
+      console.error(' Error marcando lentes como terminados:', error);
+      alert('Error: ' + error.message);
+    }
   };
 
   const actualizarEstadoPedido = async (pedidoId, nuevoEstado) => {
@@ -300,7 +316,7 @@ export const DatabaseProvider = ({ children }) => {
       setPedidos(prev => prev.map(p => p.id === pedidoId ? { ...p, estado: nuevoEstado } : p));
       return updated;
     } catch (error) {
-      console.error('❌ Error actualizando estado de pedido:', error);
+      console.error(' Error actualizando estado de pedido:', error);
       alert('Error: ' + error.message);
       return null;
     }
@@ -315,7 +331,7 @@ export const DatabaseProvider = ({ children }) => {
       });
       return await response.json();
     } catch (error) {
-      console.error('❌ Error enviando correo de confirmación:', error);
+      console.error(' Error enviando correo de confirmación:', error);
     }
   };
 
@@ -348,9 +364,9 @@ export const DatabaseProvider = ({ children }) => {
       }
 
       await actualizarEstadoPedido(pedido.id, 'Listo para Recoger');
-      alert(`✅ Notificación enviada a ${paciente.correo} exitosamente. Estado actualizado a 'Listo para Recoger'.`);
+      alert(` Notificación enviada a ${paciente.correo} exitosamente. Estado actualizado a 'Listo para Recoger'.`);
     } catch (error) {
-      console.error('❌ Error enviando notificación:', error);
+      console.error(' Error enviando notificación:', error);
       alert('Error enviando notificación: ' + error.message);
     }
   };
@@ -371,7 +387,7 @@ export const DatabaseProvider = ({ children }) => {
       setProductos(prev => prev.map(p => p.id_producto === id ? updated : p));
       return updated;
     } catch (error) {
-      console.error('❌ Error editando producto:', error);
+      console.error(' Error editando producto:', error);
       alert('Error: ' + error.message);
       return null;
     }
@@ -402,7 +418,7 @@ export const DatabaseProvider = ({ children }) => {
       setExamenes(prev => prev.map(e => e.id === id ? examenNormalizado : e));
       return examenNormalizado;
     } catch (error) {
-      console.error('❌ Error editando examen:', error);
+      console.error(' Error editando examen:', error);
       alert('Error: ' + error.message);
       return null;
     }
@@ -420,7 +436,7 @@ export const DatabaseProvider = ({ children }) => {
       setExamenes(prev => prev.filter(e => e.id !== id));
       return true;
     } catch (error) {
-      console.error('❌ Error eliminando examen:', error);
+      console.error(' Error eliminando examen:', error);
       return false;
     }
   };
@@ -443,7 +459,7 @@ export const DatabaseProvider = ({ children }) => {
       } : v));
       return data;
     } catch (error) {
-      console.error('❌ Error actualizando abono de venta:', error);
+      console.error(' Error actualizando abono de venta:', error);
       alert('Error al registrar abono: ' + error.message);
       return null;
     }
@@ -460,7 +476,7 @@ export const DatabaseProvider = ({ children }) => {
       if (!res.ok) throw new Error(data.error || data.message || 'Error al crear orden en Mercado Pago');
       return data;
     } catch (error) {
-      console.error('❌ Error en crearOrdenMercadoPago:', error);
+      console.error(' Error en crearOrdenMercadoPago:', error);
       throw error;
     }
   };
@@ -476,7 +492,7 @@ export const DatabaseProvider = ({ children }) => {
       if (!res.ok) throw new Error(data.error || data.message || 'Error al simular evento en Mercado Pago');
       return data;
     } catch (error) {
-      console.error('❌ Error en simularEventoMercadoPago:', error);
+      console.error(' Error en simularEventoMercadoPago:', error);
       throw error;
     }
   };
@@ -488,7 +504,7 @@ export const DatabaseProvider = ({ children }) => {
       if (!res.ok) throw new Error(data.error || data.message || 'Error al obtener orden de Mercado Pago');
       return data;
     } catch (error) {
-      console.error('❌ Error en obtenerOrdenMercadoPago:', error);
+      console.error(' Error en obtenerOrdenMercadoPago:', error);
       throw error;
     }
   };
@@ -509,7 +525,7 @@ export const DatabaseProvider = ({ children }) => {
       } : v));
       return data;
     } catch (error) {
-      console.error('❌ Error cambiando estado de venta:', error);
+      console.error(' Error cambiando estado de venta:', error);
       alert('Error: ' + error.message);
       return null;
     }
@@ -539,6 +555,7 @@ export const DatabaseProvider = ({ children }) => {
       eliminarExamen,
       registrarVenta,
       actualizarPagoVenta,
+      marcarLentesTerminados,
       cambiarEstadoVenta,
       actualizarEstadoPedido,
       enviarCorreoConfirmacionPedido,

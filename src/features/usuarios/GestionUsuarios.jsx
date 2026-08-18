@@ -112,7 +112,7 @@ const GestionUsuarios = () => {
                   <td style={{ padding: '0.75rem', textAlign: 'center' }}>
                     <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
                       {(user?.role === 'Super Usuario' || u.id === user?.id) && (
-                        <button onClick={() => handleCambiarPassword(u.username)} style={{ padding: '0.25rem 0.5rem', backgroundColor: '#e2e8f0', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem' }}>🔑 Restablecer Clave</button>
+                        <button onClick={() => handleCambiarPassword(u.username)} style={{ padding: '0.25rem 0.5rem', backgroundColor: '#e2e8f0', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem' }}> Restablecer Clave</button>
                       )}
                       
                       {user?.role === 'Super Usuario' && u.id !== user.id && (

@@ -28,10 +28,10 @@ const ModalMercadoPago = ({ monto, onSuccess, onCancel, crearOrdenMercadoPago, s
       const data = await crearOrdenMercadoPago({ external_reference: extRef, description: descripcion || `Pago Óptica ($${monto} MXN)`, total_amount: monto });
       setOrdenActual(data);
       setStatusInfo(`Orden creada. ID: ${data.id || data.external_reference}`);
-      addLog(`✅ Orden Creada ($${monto} MXN): ${JSON.stringify(data, null, 2)}`);
+      addLog(` Orden Creada ($${monto} MXN): ${JSON.stringify(data, null, 2)}`);
     } catch (err) {
-      setStatusInfo(`❌ Error: ${err.message}`);
-      addLog(`❌ Error Orden: ${err.message}`);
+      setStatusInfo(` Error: ${err.message}`);
+      addLog(` Error Orden: ${err.message}`);
     } finally { setCargando(false); }
   };
 
@@ -44,7 +44,7 @@ const ModalMercadoPago = ({ monto, onSuccess, onCancel, crearOrdenMercadoPago, s
         : { order_id: ordenActual.id, status, status_detail: statusDetail || status };
       const data = await simularEventoMercadoPago(payload);
       
-      const labels = { processed: '✅ Pago Acreditado', failed: '❌ Pago Rechazado', refunded: '🔄 Reembolsado', canceled: '🚫 Cancelado', expired: '⏳ Expirado', action_required: '📱 Acción Requerida' };
+      const labels = { processed: ' Pago Acreditado', failed: ' Pago Rechazado', refunded: ' Reembolsado', canceled: ' Cancelado', expired: ' Expirado', action_required: ' Acción Requerida' };
       setStatusInfo(labels[status] || status);
       addLog(`${labels[status] || status}: ${JSON.stringify(data, null, 2)}`);
 
@@ -55,20 +55,20 @@ const ModalMercadoPago = ({ monto, onSuccess, onCancel, crearOrdenMercadoPago, s
       } catch (_) {}
       
       if (status === 'processed') {
-        setStatusInfo('✅ Pago exitoso — puedes confirmar la venta');
+        setStatusInfo(' Pago exitoso — puedes confirmar la venta');
       }
     } catch (err) {
-      setStatusInfo(`❌ Error: ${err.message}`);
-      addLog(`❌ Error: ${err.message}`);
+      setStatusInfo(` Error: ${err.message}`);
+      addLog(` Error: ${err.message}`);
     } finally { setCargando(false); }
   };
 
   const handleConfirmar = () => {
     const est = (ordenActual?.status || ordenActual?.data?.status || '').toLowerCase();
-    if (['canceled', 'refunded'].includes(est)) return alert(`❌ La orden está ${est.toUpperCase()}.`);
-    if (est === 'expired') return alert('⏳ La orden expiró. Crea una nueva.');
-    if (est === 'action_required') return alert('📱 Esperando acción del cliente.');
-    if (!ordenActual?.id && !window.confirm('⚠️ No hay orden MP creada. ¿Confirmar de todas formas?')) return;
+    if (['canceled', 'refunded'].includes(est)) return alert(` La orden está ${est.toUpperCase()}.`);
+    if (est === 'expired') return alert(' La orden expiró. Crea una nueva.');
+    if (est === 'action_required') return alert(' Esperando acción del cliente.');
+    if (!ordenActual?.id && !window.confirm('️ No hay orden MP creada. ¿Confirmar de todas formas?')) return;
     onSuccess(ordenActual);
   };
 
@@ -117,7 +117,7 @@ const ModalMercadoPago = ({ monto, onSuccess, onCancel, crearOrdenMercadoPago, s
             <button onClick={() => handleSimularEvento('canceled')} disabled={cargando || !ordenActual?.id} style={{ backgroundColor: ordenActual?.id ? '#64748b' : '#94a3b8', color: 'white', border: 'none', borderRadius: '8px', padding: '0.55rem', fontWeight: 'bold', fontSize: '0.75rem', cursor: (!ordenActual?.id || cargando) ? 'not-allowed' : 'pointer' }}>2d. Cancelar</button>
             <button onClick={() => handleSimularEvento('expired')} disabled={cargando || !ordenActual?.id} style={{ backgroundColor: ordenActual?.id ? '#ea580c' : '#94a3b8', color: 'white', border: 'none', borderRadius: '8px', padding: '0.55rem', fontWeight: 'bold', fontSize: '0.75rem', cursor: (!ordenActual?.id || cargando) ? 'not-allowed' : 'pointer' }}>2e. Expirar</button>
             <button onClick={() => handleSimularEvento('action_required')} disabled={cargando || !ordenActual?.id} style={{ backgroundColor: ordenActual?.id ? '#0284c7' : '#94a3b8', color: 'white', border: 'none', borderRadius: '8px', padding: '0.55rem', fontWeight: 'bold', fontSize: '0.75rem', cursor: (!ordenActual?.id || cargando) ? 'not-allowed' : 'pointer' }}>2f. Acción Req.</button>
-            <button onClick={async () => { if (!ordenActual?.id) return; try { const d = await obtenerOrdenMercadoPago(ordenActual.id); setOrdenActual(prev => ({...prev, ...d})); addLog(`📋 Estado: ${JSON.stringify(d, null, 2)}`); } catch(e) { addLog(`❌ ${e.message}`); } }} disabled={cargando || !ordenActual?.id} style={{ backgroundColor: '#6366f1', color: 'white', border: 'none', borderRadius: '8px', padding: '0.55rem', fontWeight: 'bold', fontSize: '0.75rem', cursor: (!ordenActual?.id || cargando) ? 'not-allowed' : 'pointer' }}>3. Consultar</button>
+            <button onClick={async () => { if (!ordenActual?.id) return; try { const d = await obtenerOrdenMercadoPago(ordenActual.id); setOrdenActual(prev => ({...prev, ...d})); addLog(` Estado: ${JSON.stringify(d, null, 2)}`); } catch(e) { addLog(` ${e.message}`); } }} disabled={cargando || !ordenActual?.id} style={{ backgroundColor: '#6366f1', color: 'white', border: 'none', borderRadius: '8px', padding: '0.55rem', fontWeight: 'bold', fontSize: '0.75rem', cursor: (!ordenActual?.id || cargando) ? 'not-allowed' : 'pointer' }}>3. Consultar</button>
           </div>
 
           {/* Logs */}

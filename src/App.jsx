@@ -9,7 +9,8 @@ import Home from './features/home/Home';
 import Inventario from './features/inventario/Inventario';
 import Pacientes from './features/pacientes/Pacientes';
 import PuntoDeVenta from './features/ventas/PuntoDeVenta';
-import VentasYPedidos from './features/ventas/VentasYPedidos';
+import HistorialVentasTab from './features/ventas/HistorialVentasTab';
+import PedidosListTab from './features/ventas/PedidosListTab';
 import GestionUsuarios from './features/usuarios/GestionUsuarios';
 
 function App() {
@@ -23,7 +24,8 @@ function App() {
         <Route path="/inventario" element={<Inventario />} />
         <Route path="/pacientes" element={<Pacientes />} />
         <Route path="/ventas/nueva" element={<PuntoDeVenta />} />
-        <Route path="/ventas/historial" element={<VentasYPedidos />} />
+        <Route path="/ventas/historial" element={<HistorialVentasTab />} />
+        <Route path="/ventas/pedidos" element={<PedidosListTab />} />
         <Route path="/usuarios" element={<GestionUsuarios />} />
       </Route>
     </Routes>

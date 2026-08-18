@@ -54,12 +54,12 @@ export const generarPDFReceta = (examen, paciente) => {
     </head>
     <body>
       <div class="no-print" style="margin-bottom: 20px; text-align: right;">
-        <button onclick="window.print()" style="background-color: #2563eb; color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px;">🖨️ Imprimir / Guardar en PDF</button>
+        <button onclick="window.print()" style="background-color: #2563eb; color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px;">️ Imprimir / Guardar en PDF</button>
       </div>
 
       <div class="header">
         <div>
-          <div class="logo-title">👓 DIOPTRIOS - RECETA OPTOMÉTRICA</div>
+          <div class="logo-title"> DIOPTRIOS - RECETA OPTOMÉTRICA</div>
           <div class="subtitle">Salud y Calidad Visual a tu Alcance</div>
         </div>
         <div class="prescription-date">
@@ -91,8 +91,6 @@ export const generarPDFReceta = (examen, paciente) => {
             <th>ESFERA</th>
             <th>CILINDRO</th>
             <th>EJE (°)</th>
-            <th>ADICIÓN</th>
-            <th>A.V. (Agudeza)</th>
           </tr>
         </thead>
         <tbody>
@@ -101,19 +99,21 @@ export const generarPDFReceta = (examen, paciente) => {
             <td>${od.esfera || '0.00'}</td>
             <td>${od.cilindro || '0.00'}</td>
             <td>${od.eje || '0'}°</td>
-            <td>${od.adicion || '0.00'}</td>
-            <td><strong>${od.agudeza || '20/20'}</strong></td>
           </tr>
           <tr>
             <td class="eye-label">O.I. (Ojo Izquierdo)</td>
             <td>${oi.esfera || '0.00'}</td>
             <td>${oi.cilindro || '0.00'}</td>
             <td>${oi.eje || '0'}°</td>
-            <td>${oi.adicion || '0.00'}</td>
-            <td><strong>${oi.agudeza || '20/20'}</strong></td>
           </tr>
         </tbody>
       </table>
+
+      <div style="display: flex; justify-content: space-between; margin-top: 10px; padding: 10px; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px;">
+        <div><strong>Adición:</strong> ${examen.adicion || '-'}</div>
+        <div><strong>Distancia Interpupilar (DP):</strong> ${examen.dp || '-'}</div>
+        <div><strong>Altura Pupilar (AP):</strong> ${examen.ap || '-'}</div>
+      </div>
 
       <div class="section-title">Especificaciones del Lente</div>
       <div class="recommendations">
