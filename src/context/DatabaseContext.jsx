@@ -106,7 +106,7 @@ export const DatabaseProvider = ({ children }) => {
     formData.append('imagen', archivo);
 
     try {
-      const respuesta = await fetch(`${API_URL}/upload`, {
+      const respuesta = await fetch(`${API_BASE}/upload`, {
         method: 'POST',
         body: formData,
       });
