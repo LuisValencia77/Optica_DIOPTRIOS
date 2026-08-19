@@ -12,6 +12,7 @@ const __dirname = path.dirname(__filename);
 
 import multer from 'multer';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import PDFDocument from 'pdfkit';
 
 dotenv.config();
 
@@ -187,6 +188,7 @@ const inicializarTablas = async () => {
     await conexionBd.query(`ALTER TABLE productos ALTER COLUMN ruta_imagen TYPE TEXT;`);
     await conexionBd.query(`ALTER TABLE ventas ADD COLUMN IF NOT EXISTS descuento DECIMAL(12,2) DEFAULT 0;`);
     await conexionBd.query(`ALTER TABLE ventas ADD COLUMN IF NOT EXISTS metodoPago VARCHAR(128) DEFAULT 'Efectivo';`);
+    await conexionBd.query(`ALTER TABLE ventas ADD COLUMN IF NOT EXISTS estado_pedido VARCHAR(64) DEFAULT 'Ordenado';`);
     
     // Auth columns
     await conexionBd.query(`ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS email VARCHAR(255);`);
@@ -400,6 +402,87 @@ aplicacion.post('/api/pacientes', async (peticion, respuesta) => {
 });
 
 // Rutas inventario
+
+aplicacion.get('/api/matriz-micas', async (peticion, respuesta) => {
+  const { id_material, id_tratamiento } = peticion.query;
+  try {
+    let query = `
+      SELECT p.id_producto, p.cantidad_inventario, c.esfera, c.cilindro
+      FROM productos p
+      JOIN cristales c ON p.id_producto = c.id_producto
+      WHERE c.id_material = $1
+    `;
+    const params = [id_material];
+    
+    if (id_tratamiento) {
+      query += ` AND EXISTS (SELECT 1 FROM detalle_tratamientos_cristal dt WHERE dt.id_producto = p.id_producto AND dt.id_tratamiento = $2)`;
+      params.push(id_tratamiento);
+    } else {
+      query += ` AND NOT EXISTS (SELECT 1 FROM detalle_tratamientos_cristal dt WHERE dt.id_producto = p.id_producto)`;
+    }
+    
+    const { rows } = await conexionBd.query(query, params);
+    respuesta.json(rows);
+  } catch (error) {
+    respuesta.status(500).json({ error: error.message });
+  }
+});
+
+aplicacion.post('/api/matriz-micas', async (peticion, respuesta) => {
+  const cliente = await conexionBd.connect();
+  try {
+    await cliente.query('BEGIN');
+    const { id_material, id_tratamiento, esfera, cilindro, cantidad, precio_unitario } = peticion.body;
+    
+    let findQuery = `
+      SELECT p.id_producto 
+      FROM productos p
+      JOIN cristales c ON p.id_producto = c.id_producto
+      WHERE c.id_material = $1 AND c.esfera = $2 AND c.cilindro = $3
+    `;
+    const findParams = [id_material, esfera, cilindro];
+    
+    if (id_tratamiento) {
+      findQuery += ` AND EXISTS (SELECT 1 FROM detalle_tratamientos_cristal dt WHERE dt.id_producto = p.id_producto AND dt.id_tratamiento = $4)`;
+      findParams.push(id_tratamiento);
+    } else {
+      findQuery += ` AND NOT EXISTS (SELECT 1 FROM detalle_tratamientos_cristal dt WHERE dt.id_producto = p.id_producto)`;
+    }
+    
+    const { rows } = await cliente.query(findQuery, findParams);
+    
+    if (rows.length > 0) {
+      const id_producto = rows[0].id_producto;
+      await cliente.query(`UPDATE productos SET cantidad_inventario = $1 WHERE id_producto = $2`, [cantidad, id_producto]);
+      await cliente.query('COMMIT');
+      respuesta.json({ id_producto, cantidad });
+    } else {
+      const prodRes = await cliente.query(
+        'INSERT INTO productos (tipo_articulo, marca, modelo, cantidad_inventario, precio_unitario, ruta_imagen) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+        ['cristal', 'Genérico', 'Mica', cantidad, precio_unitario || 0, '']
+      );
+      const id_producto = prodRes.rows[0].id_producto;
+      
+      await cliente.query(
+        'INSERT INTO cristales (id_producto, id_material, esfera, cilindro, eje, adicion, tipo_lente) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+        [id_producto, id_material, esfera, cilindro, '', '', 'monofocal']
+      );
+      
+      if (id_tratamiento) {
+        await cliente.query('INSERT INTO detalle_tratamientos_cristal (id_producto, id_tratamiento) VALUES ($1, $2)', [id_producto, id_tratamiento]);
+      }
+      
+      await cliente.query('COMMIT');
+      respuesta.status(201).json({ id_producto, cantidad });
+    }
+  } catch (error) {
+    await cliente.query('ROLLBACK');
+    respuesta.status(500).json({ error: error.message });
+  } finally {
+    cliente.release();
+  }
+});
+
 aplicacion.get('/api/productos', async (peticion, respuesta) => {
   try {
     const query = `
@@ -592,6 +675,55 @@ aplicacion.post('/api/ventas', async (peticion, respuesta) => {
   }
 });
 
+aplicacion.put('/api/ventas/:id/estado-pedido', async (peticion, respuesta) => {
+  try {
+    const targetId = parseInt(peticion.params.id);
+    const { estado_pedido } = peticion.body;
+    const { rows } = await conexionBd.query(
+      'UPDATE ventas SET estado_pedido = $1 WHERE id = $2 RETURNING *',
+      [estado_pedido, targetId]
+    );
+    if (rows.length === 0) return respuesta.status(404).json({ error: 'Venta no encontrada' });
+    respuesta.json(rows[0]);
+  } catch (error) {
+    console.error(' Error actualizando estado_pedido:', error);
+    respuesta.status(500).json({ error: error.message });
+  }
+});
+
+aplicacion.post('/api/ventas/notificar-listo', async (peticion, respuesta) => {
+  try {
+    const { correoDestino, nombreCliente, ventaId, productos } = peticion.body;
+    
+    let productosHtml = '';
+    if (productos && productos.length > 0) {
+      productosHtml = '<ul>' + productos.map(p => `<li>${p.cantidad}x ${p.tipo_articulo || ''} ${p.marca || ''} ${p.modelo || ''}</li>`).join('') + '</ul>';
+    }
+
+    const emailHtml = `
+      <div style="font-family: 'Google Sans', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
+        <h2 style="color: #10b981;">¡Tu pedido está listo!</h2>
+        <p>Hola <strong>${nombreCliente || 'Cliente'}</strong>,</p>
+        <p>Te informamos que tu pedido con folio <strong>#${ventaId}</strong> ya está terminado y listo para ser entregado o recogido.</p>
+        <p>Detalle de tu pedido:</p>
+        ${productosHtml}
+        <p style="margin-top: 20px;">Te esperamos pronto. ¡Gracias por tu preferencia!</p>
+      </div>
+    `;
+
+    await enviarEmail({
+      destinatario: correoDestino,
+      asunto: `Tu pedido #${ventaId} está listo - Dioptrios`,
+      html: emailHtml
+    });
+
+    respuesta.json({ success: true, message: 'Correo enviado correctamente' });
+  } catch (error) {
+    console.error('Error enviando notificación de venta lista:', error);
+    respuesta.status(500).json({ error: error.message });
+  }
+});
+
 // Corte de caja
 aplicacion.get('/api/ventas/corte-caja', async (peticion, respuesta) => {
   try {
@@ -766,10 +898,95 @@ aplicacion.put('/api/pedidos/:id/estado', async (peticion, respuesta) => {
   }
 });
 
+// Endpoint para enviar examen visual en PDF
+aplicacion.post('/api/examenes/enviar-correo-pdf', async (peticion, respuesta) => {
+  try {
+    const { correoDestino, pacienteNombre, examen } = peticion.body;
+    if (!correoDestino) {
+      return respuesta.status(400).json({ error: 'No se proporcionó correo destino.' });
+    }
+
+    // Generar PDF en memoria
+    const doc = new PDFDocument({ size: 'A5', layout: 'landscape', margin: 40 });
+    const buffers = [];
+    doc.on('data', buffers.push.bind(buffers));
+    
+    // Contenido del PDF
+    doc.fontSize(24).fillColor('#1e293b').text('DIOPTRIOS', { align: 'center', characterSpacing: 2 });
+    doc.fontSize(10).fillColor('#64748b').text('Salud y Calidad Visual a tu Alcance', { align: 'center' });
+    doc.moveDown(2);
+    
+    doc.fontSize(16).fillColor('#1d4ed8').text('Examen Visual', { align: 'center' });
+    doc.moveDown(1);
+    
+    doc.fontSize(12).fillColor('#334155').text(`Paciente: ${pacienteNombre || 'Mostrador'}`);
+    doc.text(`Fecha: ${new Date().toLocaleDateString('es-MX')}`);
+    doc.moveDown(1.5);
+    
+    // Tabla OD / OS
+    doc.fontSize(11).fillColor('#000000');
+    doc.text('Ojo Derecho (OD):', { underline: true }).moveDown(0.5);
+    doc.text(`Esfera: ${examen.od?.esfera || '0'}   Cilindro: ${examen.od?.cilindro || '0'}   Eje: ${examen.od?.eje || '0'}°`);
+    doc.moveDown(1);
+    
+    doc.text('Ojo Izquierdo (OS):', { underline: true }).moveDown(0.5);
+    doc.text(`Esfera: ${examen.oi?.esfera || '0'}   Cilindro: ${examen.oi?.cilindro || '0'}   Eje: ${examen.oi?.eje || '0'}°`);
+    doc.moveDown(1.5);
+    
+    // Globales
+    doc.text('Datos Adicionales:', { underline: true }).moveDown(0.5);
+    doc.text(`Adición: ${examen.adicion || '-'}   DP: ${examen.dp || '-'}   AP: ${examen.ap || '-'}`);
+    
+    doc.moveDown(3);
+    doc.fontSize(10).fillColor('#94a3b8').text('Gracias por confiar en DIOPTRIOS para tu salud visual.', { align: 'center' });
+    
+    doc.end();
+
+    const pdfBuffer = await new Promise(resolve => {
+      doc.on('end', () => resolve(Buffer.concat(buffers)));
+    });
+
+    // Enviar correo
+    const mailOptions = {
+      from: `"Dioptrios" <${process.env.GMAIL_USER}>`,
+      to: correoDestino,
+      subject: 'Tu Examen Visual - Óptica Dioptrios',
+      html: `
+        <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h2 style="color: #2563eb; text-align: center;">Tu Examen Visual</h2>
+          <p>Hola <strong>${pacienteNombre}</strong>,</p>
+          <p>Adjunto a este correo encontrarás el documento PDF con los resultados de tu examen visual reciente.</p>
+          <p>Si tienes alguna duda, no dudes en contactarnos.</p>
+          <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;" />
+          <p style="text-align: center; font-size: 12px; color: #888;">Óptica Dioptrios</p>
+        </div>
+      `,
+      attachments: [{
+        filename: `Examen_Visual_${(pacienteNombre || 'Paciente').replace(/ /g, '_')}.pdf`,
+        content: pdfBuffer,
+        contentType: 'application/pdf'
+      }]
+    };
+
+    const transporter = crearTransporter();
+    if (!transporter) {
+      console.log('SIMULACIÓN PDF: Correo no configurado. PDF generado con éxito.');
+      return respuesta.json({ success: true, message: 'Correo simulado (PDF generado)' });
+    }
+
+    await transporter.sendMail(mailOptions);
+    respuesta.json({ success: true, message: 'Correo enviado con PDF adjunto' });
+
+  } catch (error) {
+    console.error(' Error enviando PDF por correo:', error.message);
+    respuesta.status(500).json({ error: error.message });
+  }
+});
+
 // Endpoint para enviar correo al guardar la venta/pedido con todos los detalles
 aplicacion.post('/api/pedidos/enviar-correo-confirmacion', async (peticion, respuesta) => {
   try {
-    const { correoDestino, nombreCliente, productos, subtotal, total, adelanto, saldoPendiente, pedidoId } = peticion.body;
+    const { correoDestino, nombreCliente, productos, subtotal, total, adelanto, saldoPendiente, pedidoId, examenData } = peticion.body;
     
     if (!correoDestino) {
       return respuesta.status(400).json({ error: 'No se proporcionó un correo electrónico de destino.' });
@@ -808,26 +1025,91 @@ aplicacion.post('/api/pedidos/enviar-correo-confirmacion', async (peticion, resp
       } else {
         const cant = Number(item.cantidadVenta || item.cantidad || 1);
         const precio = Number(item.precio || item.precio_unitario || 0);
+        
+        let nombreStr = '';
+        if (item.tipo === 'micas') {
+          nombreStr = `Micas ${item.material ? '- ' + item.material.nombre : ''}`;
+          if (item.tratamiento) nombreStr += ` - ${item.tratamiento.nombre}`;
+        } else if (item.tipo === 'armazon_propio') {
+          nombreStr = 'Armazón propio del cliente';
+        } else if (item.tipo === 'examen') {
+          nombreStr = 'Examen Visual';
+        } else if (item.tipo === 'abono' || item.isAbono) {
+          nombreStr = item.nombre || 'Saldo Pendiente';
+        } else if (item.principal) {
+          nombreStr = `${item.principal.marca || ''} ${item.principal.modelo || ''}`.trim() || 'Producto';
+        } else {
+          nombreStr = `${item.marca || ''} ${item.modelo || ''}`.trim() || 'Producto';
+        }
+
         return `
         <tr>
-          <td style="padding: 8px; border-bottom: 1px solid #ddd; vertical-align: top;">${item.marca || ''} ${item.modelo || ''} (${item.tipo || 'Producto'})</td>
+          <td style="padding: 8px; border-bottom: 1px solid #ddd; vertical-align: top;">${nombreStr}</td>
           <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: center; vertical-align: top;">${cant}</td>
           <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right; vertical-align: top;">$${precio.toFixed(2)}</td>
         </tr>`;
       }
     }).join('');
 
+    let examenHtml = '';
+    if (examenData) {
+      const ex = examenData;
+      examenHtml = `
+      <div style="margin-top: 20px; padding: 15px; border: 1px solid #cbd5e1; border-radius: 8px; background-color: #f8fafc;">
+        <h3 style="margin-top: 0; color: #1e293b; text-align: center; font-size: 16px;">Resultados de Examen Visual</h3>
+        <table style="width: 100%; border-collapse: collapse; font-size: 13px; text-align: center;">
+          <thead>
+            <tr style="background-color: #e2e8f0;">
+              <th style="padding: 8px;">Ojo</th>
+              <th style="padding: 8px;">Esfera</th>
+              <th style="padding: 8px;">Cilindro</th>
+              <th style="padding: 8px;">Eje</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style="padding: 8px; border-bottom: 1px solid #cbd5e1;"><strong>Derecho (OD)</strong></td>
+              <td style="padding: 8px; border-bottom: 1px solid #cbd5e1;">${ex.od?.esfera || '-'}</td>
+              <td style="padding: 8px; border-bottom: 1px solid #cbd5e1;">${ex.od?.cilindro || '-'}</td>
+              <td style="padding: 8px; border-bottom: 1px solid #cbd5e1;">${ex.od?.eje || '-'}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px; border-bottom: 1px solid #cbd5e1;"><strong>Izquierdo (OS)</strong></td>
+              <td style="padding: 8px; border-bottom: 1px solid #cbd5e1;">${ex.oi?.esfera || '-'}</td>
+              <td style="padding: 8px; border-bottom: 1px solid #cbd5e1;">${ex.oi?.cilindro || '-'}</td>
+              <td style="padding: 8px; border-bottom: 1px solid #cbd5e1;">${ex.oi?.eje || '-'}</td>
+            </tr>
+          </tbody>
+        </table>
+        <div style="margin-top: 10px; font-size: 13px; text-align: center; color: #475569;">
+          <strong>Adición:</strong> ${ex.adicion || '-'} | 
+          <strong>DP:</strong> ${ex.dp || '-'} | 
+          <strong>AP:</strong> ${ex.ap || '-'}
+        </div>
+      </div>`;
+    }
+
+    const isAbonoOnly = (productos || []).length > 0 && (productos || []).every(p => p.isAbono || p.tipo === 'abono');
+    const headerTitle = isAbonoOnly ? 'Comprobante de Pago' : 'Confirmación de Pedido';
+    const introText = isAbonoOnly
+      ? `<p>Hola <strong>${nombreCliente || 'Cliente'}</strong>,</p>
+         <p>Hemos registrado tu pago exitosamente. A continuación te compartimos los detalles de los saldos que has liquidado.</p>`
+      : `<p>Hola <strong>${nombreCliente || 'Cliente'}</strong>,</p>
+         <p>¡Muchas gracias por tu compra! Tu pedido <strong>#${pedidoId || ''}</strong> ha sido registrado exitosamente.</p>`;
+    const footerText = isAbonoOnly
+      ? `<p style="margin-top: 20px; font-size: 14px; color: #64748b;">Gracias por tu pago. Seguimos a tu entera disposición para cualquier duda.</p>`
+      : `<p style="margin-top: 20px; font-size: 14px; color: #64748b;">Te notificaremos por este mismo medio cuando tus productos / lentes estén listos para ser recogidos en nuestra sucursal.</p>`;
+
     const htmlContent = `
       <style>@import url('https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&display=swap');</style>
       <div style="font-family: 'Google Sans', Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
         <div style="background-color: #2563eb; color: white; padding: 20px; text-align: center;">
-          <h1 style="margin: 0; font-size: 24px;">Dioptrios - Confirmación de Pedido</h1>
+          <h1 style="margin: 0; font-size: 24px;">Dioptrios - ${headerTitle}</h1>
         </div>
         <div style="padding: 20px;">
-          <p>Hola <strong>${nombreCliente || 'Cliente'}</strong>,</p>
-          <p>¡Muchas gracias por tu compra! Tu pedido <strong>#${pedidoId || ''}</strong> ha sido registrado exitosamente.</p>
+          ${introText}
           
-          <h3 style="color: #1e293b; border-bottom: 2px solid #2563eb; padding-bottom: 5px;">Detalles de la Compra</h3>
+          <h3 style="color: #1e293b; border-bottom: 2px solid #2563eb; padding-bottom: 5px;">Detalles ${isAbonoOnly ? 'del Pago' : 'de la Compra'}</h3>
           <table style="width: 100%; border-collapse: collapse; margin-bottom: 15px;">
             <thead>
               <tr style="background-color: #f8fafc; text-align: left;">
@@ -841,6 +1123,8 @@ aplicacion.post('/api/pedidos/enviar-correo-confirmacion', async (peticion, resp
             </tbody>
           </table>
 
+          ${examenHtml}
+
           <div style="background-color: #f1f5f9; padding: 15px; border-radius: 6px; margin-top: 15px;">
             <p style="margin: 3px 0; font-size: 14px;"><strong>Subtotal:</strong> $${(Number(subtotal) || 0).toFixed(2)}</p>
             <p style="margin: 3px 0; font-size: 16px; color: #2563eb;"><strong>Total:</strong> $${(Number(total) || 0).toFixed(2)}</p>
@@ -848,7 +1132,7 @@ aplicacion.post('/api/pedidos/enviar-correo-confirmacion', async (peticion, resp
             <p style="margin: 3px 0; font-size: 14px; color: ${saldoPendiente > 0 ? '#dc2626' : '#16a34a'};"><strong>Saldo pendiente:</strong> $${(Number(saldoPendiente) || 0).toFixed(2)}</p>
           </div>
 
-          <p style="margin-top: 20px; font-size: 14px; color: #64748b;">Te notificaremos por este mismo medio cuando tus productos / lentes estén listos para ser recogidos en nuestra sucursal.</p>
+          ${footerText}
         </div>
         <div style="background-color: #f8fafc; padding: 10px; text-align: center; font-size: 12px; color: #94a3b8; border-top: 1px solid #e2e8f0;">
           Dioptrios - Excelente visión a tu alcance
@@ -858,7 +1142,7 @@ aplicacion.post('/api/pedidos/enviar-correo-confirmacion', async (peticion, resp
 
     await enviarEmail({
       destinatario: correoDestino,
-      asunto: `Confirmación de Venta y Pedido #${pedidoId || ''} - Dioptrios`,
+      asunto: isAbonoOnly ? `Comprobante de Pago de Saldos - Dioptrios` : `Confirmación de Venta y Pedido #${pedidoId || ''} - Dioptrios`,
       html: htmlContent,
     });
 

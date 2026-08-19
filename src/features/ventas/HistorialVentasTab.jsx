@@ -172,84 +172,129 @@ const HistorialVentas = () => {
                   {isExpanded && (
                     <tr style={{ borderBottom: '2px solid #cbd5e1', backgroundColor: '#f8fafc' }}>
                       <td colSpan="6" style={{ padding: '1.5rem', paddingTop: '0' }}>
-                        <div style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap', backgroundColor: 'white', padding: '1.5rem', borderRadius: '8px', border: '1px dashed #cbd5e1', marginTop: '0.5rem' }}>
-                          <div style={{ flex: 1, minWidth: '250px' }}>
-                            <h4 style={{ marginTop: 0, color: '#334155', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.5rem' }}>Detalle de Artículos</h4>
-                            {(() => {
-                              const prodsArr = typeof venta.productos === 'string' ? JSON.parse(venta.productos) : (venta.productos || []);
-                              return prodsArr.length > 0 ? (
-                                prodsArr.map((p, idx) => (
-                                  <div key={p.id || idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', marginBottom: '0.25rem' }}>
-                                    <span>{(p.cantidadVenta || p.cantidad || 1)}x {p.marca || 'Producto'} {p.modelo || ''}</span>
-                                    <span>${((Number(p.precio) || 0) * (Number(p.cantidadVenta || p.cantidad || 1))).toFixed(2)}</span>
-                                  </div>
-                                ))
-                              ) : <div style={{ fontSize: '0.9rem', color: '#64748b' }}>Sin artículos de inventario</div>;
-                            })()}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', backgroundColor: 'white', padding: '1.5rem', borderRadius: '8px', border: '1px dashed #cbd5e1' }}>
+                          {(() => {
+                            const prodsArr = typeof venta.productos === 'string' ? JSON.parse(venta.productos) : (venta.productos || []);
+                            const tieneMicas = prodsArr.some(p => p.isMica);
                             
-                            <h4 style={{ color: '#334155', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.5rem', marginTop: '1rem' }}>Detalles Extras (Lentes)</h4>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', marginBottom: '0.25rem' }}>
-                              <span>Tratamiento de Lentes:</span>
-                              <span>${Number(venta.detallesLentes?.tratamiento || 0).toFixed(2)}</span>
-                            </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', marginBottom: '0.25rem' }}>
-                              <span>Materiales:</span>
-                              <span>${Number(venta.detallesLentes?.materiales || 0).toFixed(2)}</span>
-                            </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', marginBottom: '0.25rem' }}>
-                              <span>Armazón Extra:</span>
-                              <span>${Number(venta.detallesLentes?.armazonExtra || 0).toFixed(2)}</span>
-                            </div>
-
-                            <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid #e2e8f0' }}>
-                              <h4 style={{ color: '#334155', marginBottom: '0.5rem' }}>Datos de Consulta</h4>
-                              <div style={{ fontSize: '0.9rem', color: '#475569', marginBottom: '0.75rem' }}>
-                                {venta.consulta ? venta.consulta : 'No se registró información de consulta.'}
-                              </div>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', marginBottom: '0.25rem' }}>
-                                <span>Lentes Terminados:</span>
-                                <span>{venta.lentesTerminados ? 'Sí' : 'No'}</span>
-                              </div>
-                              {!venta.lentesTerminados && (
-                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', color: '#b91c1c' }}>
-                                  <span>Motivo No Terminados:</span>
-                                  <span>{venta.motivoNoTerminado || 'No especificado'}</span>
+                            return (
+                              <>
+                                {/* Superior Izquierda: Detalle de Artículos */}
+                                <div>
+                                  <h4 style={{ marginTop: 0, color: '#334155', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.5rem', marginBottom: '1rem' }}>Detalle de Artículos</h4>
+                                  {prodsArr.length > 0 ? (
+                                    prodsArr.map((p, idx) => (
+                                      <div key={p.id || idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', marginBottom: '0.25rem' }}>
+                                        <span>{(p.cantidadVenta || p.cantidad || 1)}x {p.isMica ? `Micas ${p.nombre || ''}` : (p.nombre || p.marca || 'Producto')} {p.modelo || ''}</span>
+                                        <span>${((Number(p.precio_unitario || p.precioBase || p.precio || 0)) * (Number(p.cantidadVenta || p.cantidad || 1))).toFixed(2)}</span>
+                                      </div>
+                                    ))
+                                  ) : <div style={{ fontSize: '0.9rem', color: '#64748b' }}>Sin artículos de inventario</div>}
                                 </div>
-                              )}
-                            </div>
-                          </div>
-                          
-                          <div style={{ flex: 1, minWidth: '250px', backgroundColor: '#f1f5f9', padding: '1rem', borderRadius: '8px', display: 'flex', flexDirection: 'column' }}>
-                            <h4 style={{ marginTop: 0, color: '#334155', borderBottom: '1px solid #cbd5e1', paddingBottom: '0.5rem' }}>Acciones y Resumen</h4>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1rem', marginBottom: '0.5rem' }}>
-                                <strong>Estado de Pago:</strong>
-                                <span style={{ color: venta.estadoPago === 'Pagado' ? '#166534' : '#b45309', fontWeight: 'bold' }}>{venta.estadoPago}</span>
-                              </div>
-                            </div>
 
-                            {venta.estadoPago === 'Pendiente' && (
-                              <div style={{ marginTop: '1.5rem' }}>
-                                <button
-                                  onClick={() => handleAbonarPuntoVenta(venta)}
-                                  style={{ width: '100%', padding: '0.75rem', backgroundColor: '#3b82f6', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.95rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', boxShadow: '0 4px 6px -1px rgba(59, 130, 246, 0.5)' }}
-                                >
-                                  <CreditCard size={18} /> Abonar en Punto de Venta
-                                </button>
-                              </div>
-                            )}
+                                {/* Superior Derecha: Detalles Extras (Lentes) */}
+                                <div>
+                                  {tieneMicas && (
+                                    <>
+                                      <h4 style={{ marginTop: 0, color: '#334155', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.5rem', marginBottom: '1rem' }}>Detalles Extras (Lentes)</h4>
+                                      
+                                      {prodsArr.filter(p => p.isMica).map((p, idx) => (
+                                        <div key={`mica-info-${idx}`} style={{ marginBottom: '0.75rem', paddingBottom: '0.5rem', borderBottom: '1px dashed #e2e8f0' }}>
+                                          {p.nombre && <div style={{ fontSize: '0.9rem', color: '#475569' }}><strong>Material:</strong> {p.nombre}</div>}
+                                          {p.tratamiento?.nombre && <div style={{ fontSize: '0.9rem', color: '#475569' }}><strong>Protección:</strong> {p.tratamiento.nombre}</div>}
+                                        </div>
+                                      ))}
 
-                            {venta.estadoPago !== 'Reembolsado' && (
-                              <div style={{ marginTop: '1.25rem', borderTop: '1px solid #cbd5e1', paddingTop: '0.75rem' }}>
-                                <button
-                                  onClick={() => handleReembolsarVenta(venta)}
-                                  style={{ width: '100%', padding: '0.5rem', backgroundColor: 'transparent', color: '#ef4444', border: '1px solid #ef4444', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.82rem' }}
-                                >
-                                  Solicitar Reembolso
-                                </button>
-                              </div>
-                            )}
-                          </div>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', marginBottom: '0.25rem' }}>
+                                        <span>Costos Extras de Tratamiento:</span>
+                                        <span>${Number(venta.detallesLentes?.tratamiento || 0).toFixed(2)}</span>
+                                      </div>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', marginBottom: '0.25rem' }}>
+                                        <span>Costos Extras de Materiales:</span>
+                                        <span>${Number(venta.detallesLentes?.materiales || 0).toFixed(2)}</span>
+                                      </div>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', marginBottom: '0.25rem' }}>
+                                        <span>Costos de Armazón Extra:</span>
+                                        <span>${Number(venta.detallesLentes?.armazonExtra || 0).toFixed(2)}</span>
+                                      </div>
+                                    </>
+                                  )}
+                                </div>
+
+                                {/* Inferior Izquierda: Observaciones y Estatus */}
+                                <div>
+                                  <h4 style={{ marginTop: 0, color: '#334155', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.5rem', marginBottom: '1rem' }}>Observaciones y Estatus</h4>
+                                  
+                                  <div style={{ fontSize: '0.9rem', color: venta.consulta ? '#475569' : '#94a3b8', whiteSpace: 'pre-wrap', marginBottom: '1.5rem', fontStyle: venta.consulta ? 'normal' : 'italic' }}>
+                                    {venta.consulta || 'Sin observaciones de pedido.'}
+                                  </div>
+
+                                  {(() => {
+                                    const ESTADOS_PEDIDO = ['Ordenado', 'Enviado', 'En laboratorio', 'Listo', 'Entregado'];
+                                    const COLORS = ['#ef4444', '#f97316', '#eab308', '#0ea5e9', '#22c55e'];
+                                    const estadoActual = venta.estado_pedido || 'Ordenado';
+                                    const currentIndex = ESTADOS_PEDIDO.indexOf(estadoActual);
+
+                                    return (
+                                      <div>
+                                        <div style={{ fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '0.5rem', color: '#334155' }}>Estatus: <span style={{ fontWeight: 'normal' }}>{estadoActual}</span></div>
+                                        <div style={{ display: 'flex', width: '100%', height: '12px' }}>
+                                          {ESTADOS_PEDIDO.map((est, idx) => {
+                                            const isPassed = idx <= Math.max(0, currentIndex);
+                                            return (
+                                              <div 
+                                                key={est} 
+                                                style={{ 
+                                                  flex: 1, 
+                                                  backgroundColor: isPassed ? COLORS[idx] : '#e2e8f0',
+                                                  borderRight: idx < ESTADOS_PEDIDO.length - 1 ? '2px solid white' : 'none'
+                                                }} 
+                                                title={est}
+                                              />
+                                            );
+                                          })}
+                                        </div>
+                                        <div style={{ display: 'flex', width: '100%', marginTop: '0.5rem' }}>
+                                          {ESTADOS_PEDIDO.map((est, idx) => (
+                                            <div key={est} style={{ flex: 1, textAlign: 'center', fontSize: '0.65rem', color: idx <= currentIndex ? '#334155' : '#94a3b8', fontWeight: idx === currentIndex ? 'bold' : 'normal', textTransform: 'capitalize' }}>
+                                              {est}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    );
+                                  })()}
+                                </div>
+
+                                {/* Inferior Derecha: Acciones y Resumen */}
+                                <div style={{ backgroundColor: '#f8fafc', padding: '1rem', borderRadius: '8px', border: '1px solid #e2e8f0', alignSelf: 'start' }}>
+                                  <h4 style={{ marginTop: 0, color: '#334155', borderBottom: '1px solid #cbd5e1', paddingBottom: '0.5rem', marginBottom: '0.75rem' }}>Acciones y Resumen</h4>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.95rem', marginBottom: '1rem' }}>
+                                    <strong>Estado de Pago:</strong>
+                                    <span style={{ color: venta.estadoPago === 'Pagado' ? '#166534' : '#b45309', fontWeight: 'bold' }}>{venta.estadoPago}</span>
+                                  </div>
+
+                                  {venta.estadoPago === 'Pendiente' && (
+                                    <button
+                                      onClick={() => handleAbonarPuntoVenta(venta)}
+                                      style={{ width: '100%', padding: '0.5rem', backgroundColor: '#3b82f6', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', marginBottom: '0.5rem' }}
+                                    >
+                                      <CreditCard size={16} /> Abonar
+                                    </button>
+                                  )}
+
+                                  {venta.estadoPago !== 'Reembolsado' && (
+                                    <button
+                                      onClick={() => handleReembolsarVenta(venta)}
+                                      style={{ width: '100%', padding: '0.4rem', backgroundColor: 'transparent', color: '#ef4444', border: '1px solid #ef4444', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.8rem' }}
+                                    >
+                                      Solicitar Reembolso
+                                    </button>
+                                  )}
+                                </div>
+                              </>
+                            );
+                          })()}
                         </div>
                       </td>
                     </tr>

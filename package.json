@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "server": "node server/index.js",
+    "server:dev": "nodemon server/index.js",
     "seed": "node server/seed-sample-data.mjs"
   },
   "dependencies": {
@@ -20,6 +21,7 @@
     "lucide-react": "^1.17.0",
     "multer": "^2.2.0",
     "nodemailer": "^9.0.3",
+    "pdfkit": "^0.19.1",
     "pg": "^8.22.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
@@ -36,6 +38,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.6.0",
+    "nodemon": "^3.1.14",
     "vite": "^8.0.12"
   }
 }

@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { useDatabase } from '../../context/DatabaseContext';
 import { useAuth } from '../../context/AuthContext';
-import { AlertTriangle, Package, Image as ImageIcon, Check } from 'lucide-react';
+import { AlertTriangle, Package, Image as ImageIcon, Check, Glasses, Eye, Box } from 'lucide-react';
+import MatrizMicas from './MatrizMicas';
 
 const Inventario = () => {
   const { productos, materiales, tratamientos, agregarProducto, editarProducto, subirImagen, agregarMaterial, agregarTratamiento } = useDatabase();
@@ -12,6 +13,7 @@ const Inventario = () => {
   const [soloStockBajo, setSoloStockBajo] = useState(false);
 
   // === ESTADOS PARA PRODUCTO ===
+  const [mostrarFormulario, setMostrarFormulario] = useState(false);
   const [editandoId, setEditandoId] = useState(null);
   const [tipoArticulo, setTipoArticulo] = useState('armazon');
   const [marca, setMarca] = useState('');
@@ -46,6 +48,7 @@ const Inventario = () => {
 
   // Filtros
   const [filtroTexto, setFiltroTexto] = useState('');
+  const [filtroCategoria, setFiltroCategoria] = useState('todos');
 
   // === ESTADOS PARA CATALOGOS ===
   const [nuevoMatNombre, setNuevoMatNombre] = useState('');
@@ -61,6 +64,7 @@ const Inventario = () => {
 
   const resetForm = () => {
     setEditandoId(null);
+    setMostrarFormulario(false);
     setTipoArticulo('armazon');
     setMarca(''); setModelo(''); setCantidad(0); setPrecio(0);
     setArchivoImagen(null); setImagenPreview(''); setRutaImagenExistente('');
@@ -126,6 +130,7 @@ const Inventario = () => {
   const editarItem = (prod) => {
     resetForm();
     setEditandoId(prod.id_producto);
+    setMostrarFormulario(true);
     setTipoArticulo(prod.tipo_articulo);
     setMarca(prod.marca);
     setModelo(prod.modelo);
@@ -152,11 +157,26 @@ const Inventario = () => {
     return productos.filter(p => {
       const matchTexto = p.marca.toLowerCase().includes(filtroTexto.toLowerCase()) || p.modelo.toLowerCase().includes(filtroTexto.toLowerCase());
       const stockCritico = soloStockBajo ? p.cantidad_inventario <= 2 : true;
-      return matchTexto && stockCritico;
+      const matchCategoria = filtroCategoria === 'todos' || p.tipo_articulo === filtroCategoria;
+      return matchTexto && stockCritico && matchCategoria;
     });
-  }, [productos, filtroTexto, soloStockBajo]);
+  }, [productos, filtroTexto, soloStockBajo, filtroCategoria]);
 
   const cantStockBajo = productos.filter(p => p.cantidad_inventario <= 2).length;
+
+  const marcasUnicas = useMemo(() => {
+    const marcas = productos.map(p => p.marca).filter(Boolean);
+    return [...new Set(marcas)].sort();
+  }, [productos]);
+
+  const getIsotipo = (tipo) => {
+    switch(tipo) {
+      case 'armazon': return <Glasses size={20} color="#94a3b8" />;
+      case 'lente_contacto':
+      case 'cristal': return <Eye size={20} color="#94a3b8" />;
+      default: return <Box size={20} color="#94a3b8" />;
+    }
+  };
 
   return (
     <div>
@@ -193,7 +213,15 @@ const Inventario = () => {
 
           {isManager && (
             <div style={{ backgroundColor: '#fff', padding: '1.5rem', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', marginBottom: '2rem' }}>
-              <h3 style={{ marginBottom: '1rem', color: '#334155' }}>{editandoId ? 'Editar Producto' : 'Registrar Nuevo Producto'}</h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: mostrarFormulario || editandoId ? '1rem' : '0' }}>
+                <h3 style={{ color: '#334155', margin: 0 }}>{editandoId ? 'Editar Producto' : 'Registrar Nuevo Producto'}</h3>
+                {!mostrarFormulario && !editandoId && (
+                  <button onClick={() => setMostrarFormulario(true)} style={{ padding: '0.5rem 1rem', backgroundColor: '#10b981', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
+                    + Añadir Producto
+                  </button>
+                )}
+              </div>
+              {(mostrarFormulario || editandoId) && (
               <form onSubmit={guardarProducto}>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
                   
@@ -208,7 +236,10 @@ const Inventario = () => {
                   </div>
                   <div>
                     <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '0.25rem' }}>Marca *</label>
-                    <input required value={marca} onChange={e => setMarca(e.target.value)} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
+                    <input required list="marcas-list" value={marca} onChange={e => setMarca(e.target.value)} style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
+                    <datalist id="marcas-list">
+                      {marcasUnicas.map(m => <option key={m} value={m} />)}
+                    </datalist>
                   </div>
                   <div>
                     <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '0.25rem' }}>Modelo / Nombre</label>
@@ -232,26 +263,34 @@ const Inventario = () => {
 
                 {/* Secciones Específicas */}
                 {tipoArticulo === 'armazon' && (
-                  <div style={{ backgroundColor: '#f8fafc', padding: '1rem', borderRadius: '8px', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '1rem' }}>
+                  <div style={{ backgroundColor: '#f8fafc', padding: '1rem', borderRadius: '8px', marginBottom: '1rem' }}>
+                    <h4 style={{ margin: '0 0 1rem 0', color: '#475569', fontSize: '0.95rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.5rem' }}>Características Adicionales</h4>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem' }}>
                     <div><label style={{ fontSize: '0.85rem' }}>Color</label><input value={color} onChange={e=>setColor(e.target.value)} style={{width:'100%', padding:'0.4rem'}} /></div>
                     <div><label style={{ fontSize: '0.85rem' }}>Material</label><input value={materialArmazon} onChange={e=>setMaterialArmazon(e.target.value)} style={{width:'100%', padding:'0.4rem'}} /></div>
                     <div><label style={{ fontSize: '0.85rem' }}>Medida Puente</label><input value={medidaPuente} onChange={e=>setMedidaPuente(e.target.value)} style={{width:'100%', padding:'0.4rem'}} /></div>
                     <div><label style={{ fontSize: '0.85rem' }}>Medida Varilla</label><input value={medidaVarilla} onChange={e=>setMedidaVarilla(e.target.value)} style={{width:'100%', padding:'0.4rem'}} /></div>
+                    </div>
                   </div>
                 )}
 
                 {tipoArticulo === 'lente_contacto' && (
-                  <div style={{ backgroundColor: '#f8fafc', padding: '1rem', borderRadius: '8px', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1rem' }}>
+                  <div style={{ backgroundColor: '#f8fafc', padding: '1rem', borderRadius: '8px', marginBottom: '1rem' }}>
+                    <h4 style={{ margin: '0 0 1rem 0', color: '#475569', fontSize: '0.95rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.5rem' }}>Características Adicionales</h4>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem' }}>
                     <div><label style={{ fontSize: '0.85rem' }}>Curva Base</label><input value={curvaBase} onChange={e=>setCurvaBase(e.target.value)} style={{width:'100%', padding:'0.4rem'}} /></div>
                     <div><label style={{ fontSize: '0.85rem' }}>Diámetro</label><input value={diametro} onChange={e=>setDiametro(e.target.value)} style={{width:'100%', padding:'0.4rem'}} /></div>
                     <div><label style={{ fontSize: '0.85rem' }}>Poder Esférico</label><input value={poderEsferico} onChange={e=>setPoderEsferico(e.target.value)} style={{width:'100%', padding:'0.4rem'}} /></div>
                     <div><label style={{ fontSize: '0.85rem' }}>Días Reemplazo</label><input type="number" value={diasReemplazo} onChange={e=>setDiasReemplazo(e.target.value)} style={{width:'100%', padding:'0.4rem'}} /></div>
                     <div><label style={{ fontSize: '0.85rem' }}>Fecha Caducidad</label><input type="date" value={fechaCaducidad} onChange={e=>setFechaCaducidad(e.target.value)} style={{width:'100%', padding:'0.4rem'}} /></div>
+                    </div>
                   </div>
                 )}
 
                 {tipoArticulo === 'cristal' && (
-                  <div style={{ backgroundColor: '#f8fafc', padding: '1rem', borderRadius: '8px', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1rem' }}>
+                  <div style={{ backgroundColor: '#f8fafc', padding: '1rem', borderRadius: '8px', marginBottom: '1rem' }}>
+                    <h4 style={{ margin: '0 0 1rem 0', color: '#475569', fontSize: '0.95rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.5rem' }}>Características Adicionales</h4>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem' }}>
                     <div>
                       <label style={{ fontSize: '0.85rem' }}>Material de Cristal</label>
                       <select value={idMaterialCristal} onChange={e=>setIdMaterialCristal(e.target.value)} style={{width:'100%', padding:'0.4rem'}}>
@@ -283,16 +322,18 @@ const Inventario = () => {
                         ))}
                       </div>
                     </div>
+                    </div>
                   </div>
                 )}
 
                 <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
-                  {editandoId && <button type="button" onClick={resetForm} style={{ padding: '0.5rem 1rem', borderRadius: '4px', border: '1px solid #cbd5e1', backgroundColor: 'transparent', cursor: 'pointer' }}>Cancelar Edición</button>}
+                  <button type="button" onClick={resetForm} style={{ padding: '0.5rem 1rem', borderRadius: '4px', border: '1px solid #cbd5e1', backgroundColor: 'transparent', cursor: 'pointer' }}>Cancelar</button>
                   <button type="submit" style={{ padding: '0.5rem 1rem', borderRadius: '4px', border: 'none', backgroundColor: '#2563eb', color: 'white', fontWeight: 'bold', cursor: 'pointer' }}>
                     {editandoId ? 'Guardar Cambios' : 'Registrar Producto'}
                   </button>
                 </div>
               </form>
+              )}
             </div>
           )}
 
@@ -301,6 +342,18 @@ const Inventario = () => {
             <input type="text" placeholder="Buscar producto por marca o modelo..." value={filtroTexto} onChange={e=>setFiltroTexto(e.target.value)} style={{ width: '100%', padding: '0.75rem', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
           </div>
 
+          {/* Filtro de Categorías */}
+          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+            <button onClick={() => setFiltroCategoria('todos')} style={{ padding: '0.5rem 1rem', borderRadius: '999px', border: '1px solid #cbd5e1', backgroundColor: filtroCategoria === 'todos' ? '#2563eb' : '#f8fafc', color: filtroCategoria === 'todos' ? 'white' : '#475569', cursor: 'pointer', fontSize: '0.9rem' }}>Todos</button>
+            <button onClick={() => setFiltroCategoria('armazon')} style={{ padding: '0.5rem 1rem', borderRadius: '999px', border: '1px solid #cbd5e1', backgroundColor: filtroCategoria === 'armazon' ? '#2563eb' : '#f8fafc', color: filtroCategoria === 'armazon' ? 'white' : '#475569', cursor: 'pointer', fontSize: '0.9rem' }}>Armazones</button>
+            <button onClick={() => setFiltroCategoria('lente_contacto')} style={{ padding: '0.5rem 1rem', borderRadius: '999px', border: '1px solid #cbd5e1', backgroundColor: filtroCategoria === 'lente_contacto' ? '#2563eb' : '#f8fafc', color: filtroCategoria === 'lente_contacto' ? 'white' : '#475569', cursor: 'pointer', fontSize: '0.9rem' }}>Lentes de Contacto</button>
+            <button onClick={() => setFiltroCategoria('accesorio')} style={{ padding: '0.5rem 1rem', borderRadius: '999px', border: '1px solid #cbd5e1', backgroundColor: filtroCategoria === 'accesorio' ? '#2563eb' : '#f8fafc', color: filtroCategoria === 'accesorio' ? 'white' : '#475569', cursor: 'pointer', fontSize: '0.9rem' }}>Accesorios</button>
+            <button onClick={() => setFiltroCategoria('cristal')} style={{ padding: '0.5rem 1rem', borderRadius: '999px', border: '1px solid #cbd5e1', backgroundColor: filtroCategoria === 'cristal' ? '#2563eb' : '#f8fafc', color: filtroCategoria === 'cristal' ? 'white' : '#475569', cursor: 'pointer', fontSize: '0.9rem' }}>Micas</button>
+          </div>
+
+          {filtroCategoria === 'cristal' ? (
+            <MatrizMicas />
+          ) : (
           <div style={{ overflowX: 'auto', backgroundColor: '#fff', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
               <thead>
@@ -318,7 +371,7 @@ const Inventario = () => {
                 {productosFiltrados.map(prod => (
                   <tr key={prod.id_producto} style={{ borderBottom: '1px solid #e2e8f0' }}>
                     <td style={{ padding: '1rem' }}>
-                      {prod.ruta_imagen ? <img src={prod.ruta_imagen} alt={prod.marca} style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px' }} /> : <div style={{ width: '40px', height: '40px', backgroundColor: '#e2e8f0', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><ImageIcon size={20} color="#94a3b8" /></div>}
+                      {prod.ruta_imagen ? <img src={prod.ruta_imagen} alt={prod.marca} style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px' }} /> : <div style={{ width: '40px', height: '40px', backgroundColor: '#e2e8f0', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{getIsotipo(prod.tipo_articulo)}</div>}
                     </td>
                     <td style={{ padding: '1rem', textTransform: 'capitalize' }}>{prod.tipo_articulo.replace('_', ' ')}</td>
                     <td style={{ padding: '1rem' }}><strong>{prod.marca}</strong><br/><span style={{ fontSize: '0.85rem', color: '#64748b' }}>{prod.modelo}</span></td>
@@ -345,6 +398,7 @@ const Inventario = () => {
               </tbody>
             </table>
           </div>
+          )}
         </div>
       )}
 

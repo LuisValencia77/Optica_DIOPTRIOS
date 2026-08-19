@@ -1,13 +1,16 @@
 import React, { useState } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { LayoutDashboard, Users, UserRoundCog, Package, Glasses, ListOrdered, FileClock, LogOut, Settings, Menu, X, PackageCheck, ShoppingCart, DollarSign } from 'lucide-react';
+import { LayoutDashboard, Users, UserRoundCog, Package, Glasses, ListOrdered, FileClock, LogOut, Settings, Menu, X, PackageCheck, ShoppingCart, DollarSign, Truck } from 'lucide-react';
 
 
 const MainLayout = ({ children }) => {
   const { user, isManager, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  const isPuntoVenta = location.pathname === '/ventas/nueva';
 
   const handleLogout = () => {
     logout();
@@ -30,10 +33,8 @@ const MainLayout = ({ children }) => {
       <aside className={`sidebar ${isSidebarOpen ? 'open' : ''}`}>
         <div style={{ padding: '1rem', borderBottom: '1px solid #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <div style={{ width: '32px', height: '32px', backgroundColor: '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '4px' }}>
-              <Glasses size={20} color="white" />
-            </div>
-            <span style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>DIOPTRIOS</span>
+            
+            <span style={{ fontWeight: 'normal', fontSize: '1.1rem' }}>DIOPTRIOS</span>
           </div>
           {/* Botón cerrar solo visible en móvil */}
           <button className="menu-toggle-btn" onClick={closeSidebar} style={{ padding: 0 }}>
@@ -56,9 +57,15 @@ const MainLayout = ({ children }) => {
               </NavLink>
             </li>
             <li>
-              <NavLink to="/pacientes" onClick={closeSidebar} style={({ isActive }) => ({ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1.5rem', textDecoration: 'none', color: '#334155', backgroundColor: isActive ? '#f1f5f9' : 'transparent', fontWeight: isActive ? 'bold' : 'normal' })}>
-                <Users size={20} />
-                <span>Pacientes</span>
+              <NavLink to="/ventas/pedidos-clientes" onClick={closeSidebar} style={({ isActive }) => ({ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1.5rem', textDecoration: 'none', color: '#334155', backgroundColor: isActive ? '#f1f5f9' : 'transparent', fontWeight: isActive ? 'bold' : 'normal' })}>
+                <Truck size={20} />
+                <span>Seguimiento</span>
+              </NavLink>
+            </li>
+            <li>
+              <NavLink to="/ventas/pedidos" onClick={closeSidebar} style={({ isActive }) => ({ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1.5rem', textDecoration: 'none', color: '#334155', backgroundColor: isActive ? '#f1f5f9' : 'transparent', fontWeight: isActive ? 'bold' : 'normal' })}>
+                <PackageCheck size={20} />
+                <span>Pedidos</span>
               </NavLink>
             </li>
             <li>
@@ -68,15 +75,15 @@ const MainLayout = ({ children }) => {
               </NavLink>
             </li>
             <li>
-              <NavLink to="/ventas/historial" onClick={closeSidebar} style={({ isActive }) => ({ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1.5rem', textDecoration: 'none', color: '#334155', backgroundColor: isActive ? '#f1f5f9' : 'transparent', fontWeight: isActive ? 'bold' : 'normal' })}>
-                <DollarSign size={20} />
-                <span>Historial de Ventas</span>
+              <NavLink to="/pacientes" onClick={closeSidebar} style={({ isActive }) => ({ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1.5rem', textDecoration: 'none', color: '#334155', backgroundColor: isActive ? '#f1f5f9' : 'transparent', fontWeight: isActive ? 'bold' : 'normal' })}>
+                <Users size={20} />
+                <span>Pacientes</span>
               </NavLink>
             </li>
             <li>
-              <NavLink to="/ventas/pedidos" onClick={closeSidebar} style={({ isActive }) => ({ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1.5rem', textDecoration: 'none', color: '#334155', backgroundColor: isActive ? '#f1f5f9' : 'transparent', fontWeight: isActive ? 'bold' : 'normal' })}>
-                <PackageCheck size={20} />
-                <span>Estado de Pedidos</span>
+              <NavLink to="/ventas/historial" onClick={closeSidebar} style={({ isActive }) => ({ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1.5rem', textDecoration: 'none', color: '#334155', backgroundColor: isActive ? '#f1f5f9' : 'transparent', fontWeight: isActive ? 'bold' : 'normal' })}>
+                <DollarSign size={20} />
+                <span>Historial</span>
               </NavLink>
             </li>
             {isManager && (
@@ -100,14 +107,14 @@ const MainLayout = ({ children }) => {
               <Menu size={24} />
             </button>
             <div className="header-sucursal" style={{ color: '#64748b' }}>
-              Sucursal: <strong>Centro</strong>
+              Sucursal: Centro
             </div>
           </div>
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                <UserRoundCog size={20} color="#64748b" />
-               <span style={{ fontWeight: '500', fontSize: '0.9rem' }}>{user?.name} <span className="header-sucursal">({user?.role})</span></span>
+               <span style={{ fontWeight: 'normal', fontSize: '0.9rem' }}>{user?.name} <span className="header-sucursal">({user?.role})</span></span>
             </div>
             <button onClick={handleLogout} style={{ background: 'none', border: 'none', display: 'flex', alignItems: 'center', gap: '0.25rem', color: '#ef4444', cursor: 'pointer', padding: 0 }}>
               <LogOut size={18} />
@@ -117,7 +124,7 @@ const MainLayout = ({ children }) => {
         </header>
 
         {/* Page Content */}
-        <main className="mobile-p-1" style={{ flex: 1, padding: '2rem', backgroundColor: '#ffffff', overflowY: 'auto', overflowX: 'hidden' }}>
+        <main className="mobile-p-1" style={{ flex: 1, padding: isPuntoVenta ? '0' : '2rem', backgroundColor: isPuntoVenta ? '#f8fafc' : '#ffffff', overflowY: isPuntoVenta ? 'hidden' : 'auto', overflowX: 'hidden' }}>
           {children}
         </main>
       </div>

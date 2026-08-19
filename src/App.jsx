@@ -11,6 +11,7 @@ import Pacientes from './features/pacientes/Pacientes';
 import PuntoDeVenta from './features/ventas/PuntoDeVenta';
 import HistorialVentasTab from './features/ventas/HistorialVentasTab';
 import PedidosListTab from './features/ventas/PedidosListTab';
+import PedidosClientesList from './features/ventas/PedidosClientesList';
 import GestionUsuarios from './features/usuarios/GestionUsuarios';
 
 function App() {
@@ -26,6 +27,7 @@ function App() {
         <Route path="/ventas/nueva" element={<PuntoDeVenta />} />
         <Route path="/ventas/historial" element={<HistorialVentasTab />} />
         <Route path="/ventas/pedidos" element={<PedidosListTab />} />
+        <Route path="/ventas/pedidos-clientes" element={<PedidosClientesList />} />
         <Route path="/usuarios" element={<GestionUsuarios />} />
       </Route>
     </Routes>

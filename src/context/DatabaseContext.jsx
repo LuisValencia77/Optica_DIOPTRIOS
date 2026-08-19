@@ -124,6 +124,40 @@ export const DatabaseProvider = ({ children }) => {
     }
   };
 
+  const obtenerMatrizMicas = async (idMaterial, idTratamiento = '') => {
+    try {
+      let url = `${API_BASE}/matriz-micas?id_material=${idMaterial}`;
+      if (idTratamiento) url += `&id_tratamiento=${idTratamiento}`;
+      
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('Error al obtener la matriz de micas');
+      return await response.json();
+    } catch (error) {
+      console.error(error);
+      return [];
+    }
+  };
+
+  const actualizarCeldaMatrizMicas = async (datosCelda) => {
+    try {
+      const response = await fetch(`${API_BASE}/matriz-micas`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(datosCelda),
+      });
+      if (!response.ok) throw new Error('Error al actualizar inventario');
+      
+      // Optcionalmente refrescar lista de productos principal
+      obtenerProductos();
+      
+      return await response.json();
+    } catch (error) {
+      console.error(error);
+      alert('Error guardando en BD: ' + error.message);
+      throw error;
+    }
+  };
+
   const agregarProducto = async (producto) => {
     try {
       const response = await fetch(`${API_BASE}/productos`, {
@@ -156,10 +190,36 @@ export const DatabaseProvider = ({ children }) => {
   };
 
   const agregarPaciente = async (paciente) => {
-    const alreadyExists = pacientes.some(p => p.telefono === paciente.telefono || (p.nombre.toLowerCase() === paciente.nombre.toLowerCase() && (p.apellidos || '').toLowerCase() === (paciente.apellidos || '').toLowerCase()));
-    if (alreadyExists) {
-      alert('Este paciente ya se encuentra registrado.');
+    let duplicatedAlert = null;
+    let errorType = null;
+
+    const alreadyExists = pacientes.some(p => {
+      const isSameName = p.nombre?.trim().toLowerCase() === paciente.nombre?.trim().toLowerCase() && 
+                        (p.apellidos || '').trim().toLowerCase() === (paciente.apellidos || '').trim().toLowerCase();
+      const isSameEmail = p.correo && paciente.correo && p.correo.trim().toLowerCase() === paciente.correo.trim().toLowerCase();
+      const isSamePhone = p.telefono && paciente.telefono && p.telefono.trim() === paciente.telefono.trim();
+      
+      if (isSameName) { 
+        duplicatedAlert = 'Este paciente ya se encuentra registrado con el mismo nombre y apellidos.'; 
+        errorType = 'nombre';
+        return true; 
+      }
+      if (isSameEmail) { 
+        duplicatedAlert = 'Este correo pertenece a otro cliente.'; 
+        errorType = 'correo';
+        return true; 
+      }
+      if (isSamePhone) { 
+        duplicatedAlert = 'Este número pertenece a otro cliente.'; 
+        errorType = 'telefono';
+        return true; 
+      }
+
       return false;
+    });
+
+    if (alreadyExists) {
+      throw new Error(JSON.stringify({ type: 'validation', field: errorType, message: duplicatedAlert }));
     }
 
     const newPaciente = { ...paciente, id: Date.now() };
@@ -309,6 +369,27 @@ export const DatabaseProvider = ({ children }) => {
     }
   };
 
+  const actualizarEstadoPedidoCliente = async (ventaId, nuevoEstado) => {
+    try {
+      const response = await fetch(`${API_BASE}/ventas/${ventaId}/estado-pedido`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ estado_pedido: nuevoEstado }),
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Error al actualizar estado del pedido');
+      }
+      const updated = await response.json();
+      setVentas(prev => prev.map(v => v.id.toString() === ventaId.toString() ? { ...v, estado_pedido: nuevoEstado } : v));
+      return updated;
+    } catch (error) {
+      console.error(' Error actualizando estado de pedido de cliente:', error);
+      alert('Error: ' + error.message);
+      return null;
+    }
+  };
+
   const actualizarEstadoPedido = async (pedidoId, nuevoEstado) => {
     try {
       const response = await fetch(`${API_BASE}/pedidos/${pedidoId}/estado`, {
@@ -376,6 +457,38 @@ export const DatabaseProvider = ({ children }) => {
     } catch (error) {
       console.error(' Error enviando notificación:', error);
       alert('Error enviando notificación: ' + error.message);
+    }
+  };
+
+  const notificarVentaLista = async (ventaId) => {
+    const venta = ventas.find(v => v.id.toString() === ventaId.toString());
+    if (!venta) return alert('Venta no encontrada');
+
+    const paciente = pacientes.find(p => p.id.toString() === (venta.pacienteId || '').toString());
+    if (!paciente || !paciente.correo) {
+      console.warn('El paciente no tiene registrado un correo electrónico para notificarle.');
+      return;
+    }
+
+    const productosArr = typeof venta.productos === 'string' ? JSON.parse(venta.productos) : (venta.productos || []);
+
+    try {
+      const response = await fetch(`${API_BASE}/ventas/notificar-listo`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          correoDestino: paciente.correo,
+          nombreCliente: paciente.nombre,
+          ventaId: venta.id,
+          productos: productosArr
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Fallo enviando correo de venta lista');
+      }
+    } catch (error) {
+      console.error(' Error enviando notificación de venta lista:', error);
     }
   };
 
@@ -473,7 +586,23 @@ export const DatabaseProvider = ({ children }) => {
     }
   };
 
+  const enviarExamenPorCorreo = async (correoDestino, pacienteNombre, examen) => {
+    try {
+      const respuesta = await fetch(`${API_BASE}/examenes/enviar-correo-pdf`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ correoDestino, pacienteNombre, examen })
+      });
+      if (!respuesta.ok) throw new Error('Error al enviar el examen por correo');
+      return await respuesta.json();
+    } catch (error) {
+      console.error(' Error enviando examen:', error);
+      throw error;
+    }
+  };
+
   const crearOrdenMercadoPago = async (datosOrden) => {
+
     try {
       const res = await fetch(`${API_BASE}/mercadopago/crear-orden`, {
         method: 'POST',
@@ -550,6 +679,8 @@ export const DatabaseProvider = ({ children }) => {
       ventas,
       loading,
       subirImagen,
+      obtenerMatrizMicas,
+      actualizarCeldaMatrizMicas,
       agregarProducto,
       editarProducto,
       eliminarProducto,
@@ -568,9 +699,12 @@ export const DatabaseProvider = ({ children }) => {
       actualizarEstadoPedido,
       enviarCorreoConfirmacionPedido,
       notificarPedidoListo,
+      notificarVentaLista,
+      actualizarEstadoPedidoCliente,
       crearOrdenMercadoPago,
       simularEventoMercadoPago,
       obtenerOrdenMercadoPago,
+      enviarExamenPorCorreo,
     }}>
       {children}
     </DatabaseContext.Provider>
